@@ -104,6 +104,7 @@
 
 #define DEBOUNCE_DELAY 15
 #define LEDS_DURATION_MS 300
+#define BATTERY_UPDATE_INTERVAL_MS 60000
 
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
@@ -114,6 +115,7 @@ byte layout_level = 0;
 
 bool ledsOn = false;
 unsigned long ledsOnEndTime;
+unsigned long lastBatteryUpdateTime = 0;
 
 // PCB v3 - working pins
 byte row_pins[NUM_ROWS] = {15, 23, 4, 16};
@@ -164,6 +166,10 @@ void loop() {
   scan_switches();
   if (keyboard.isConnected()) {
     process_keys();
+    if (millis() - lastBatteryUpdateTime >= BATTERY_UPDATE_INTERVAL_MS) {
+      get_battery_percent();
+      lastBatteryUpdateTime = millis();
+    }
   }
   tick_battery_leds();
 
