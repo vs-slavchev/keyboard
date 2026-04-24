@@ -156,6 +156,8 @@ void setup() {
   pinMode(LED_BATTERY_PIN_R, OUTPUT);
   init_battery_optimisations();
   keyboard.begin();
+  get_battery_percent();
+  lastBatteryUpdateTime = millis();
   Serial.begin(9600);
   Serial.println("Started.");
 
