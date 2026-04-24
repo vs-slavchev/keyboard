@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Изумруд — Key Remapper</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <h1>Изумруд Key Remapper</h1>
+
+  <div class="toolbar">
+    <label for="preset-select">Preset:</label>
+    <select id="preset-select"></select>
+
+    <div class="layer-tabs">
+      <button class="layer-tab active" data-layer="0">Layer 0 — Base</button>
+      <button class="layer-tab" data-layer="1">Layer 1 — Fn / Num</button>
+    </div>
+
+    <button id="btn-connect">Connect</button>
+    <button id="btn-send" disabled>Send to Keyboard</button>
+
+    <span id="status" class="status info">Not connected</span>
+  </div>
+
+  <div class="keyboard-wrapper">
+    <div id="keyboard-grid"></div>
+  </div>
+
+  <!-- Key picker modal -->
+  <div id="picker-overlay">
+    <div class="picker-modal">
+      <div class="picker-header">
+        <span id="picker-title">Pick a key</span>
+        <button id="picker-close" aria-label="Close">✕</button>
+      </div>
+      <div id="picker-groups"></div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
