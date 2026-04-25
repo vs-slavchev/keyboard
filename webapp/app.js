@@ -8,12 +8,13 @@ const DATA_CHAR_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const CMD_ENTER_CONFIG    = 0x01;
 const CMD_EXIT_CONFIG     = 0x02;
 const CMD_COMMIT          = 0x03;
-const CHUNK_DATA_BYTES    = 18; // 20 byte BLE payload - 2 byte offset header
+const CHUNK_DATA_BYTES    = 18;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let layout = deepClone(PRESETS[DEFAULT_PRESET]);
+let savedLayout = deepClone(PRESETS[DEFAULT_PRESET]); // last successfully sent layout
 let activeLayer = 0;
-let selectedCell = null; // { row, col }
+let selectedCell = null;
 let bleDevice = null;
 let controlChar = null;
 let dataChar = null;
@@ -34,6 +35,66 @@ function setBleStatus(connected) {
   btn.textContent = connected ? 'Disconnect' : 'Connect';
   btn.classList.toggle('connected', connected);
   document.getElementById('btn-send').disabled = !connected;
+}
+
+function keyEqual(a, b) {
+  return a[0] === b[0] && a[1] === b[1];
+}
+
+// ── Platform detection ────────────────────────────────────────────────────────
+function getPlatformInfo() {
+  const ua = navigator.userAgent;
+  const isIOS     = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const isMac     = /Mac/.test(navigator.platform) && !isIOS;
+  const isWindows = /Win/.test(navigator.platform);
+  const isLinux   = /Linux/.test(navigator.platform) && !isAndroid;
+  const isFirefox = /Firefox/.test(ua);
+  const isSafari  = /Safari/.test(ua) && !/Chrome/.test(ua);
+  const isChrome  = /Chrome/.test(ua) && !/Edg/.test(ua);
+  const isEdge    = /Edg/.test(ua);
+
+  if (isIOS)
+    return { type: 'err', text: '⚠️ Web Bluetooth is not supported on iOS. Use Chrome or Edge on a Mac, Windows PC, or Android device.' };
+  if (isFirefox)
+    return { type: 'err', text: '⚠️ Web Bluetooth is not supported in Firefox. Please open this page in Chrome or Edge.' };
+  if (isSafari)
+    return { type: 'err', text: '⚠️ Web Bluetooth is not supported in Safari. Please open this page in Chrome or Edge.' };
+  if (isLinux)
+    return { type: 'warn', text: '💡 On Linux, Web Bluetooth may need to be enabled first: open chrome://flags/#enable-experimental-web-platform-features and set it to Enabled, then relaunch Chrome.' };
+  if (isAndroid)
+    return { type: 'ok', text: '✓ Chrome on Android is supported. Make sure Bluetooth is enabled in system Settings before connecting.' };
+  if (isMac && (isChrome || isEdge))
+    return { type: 'ok', text: '✓ Chrome / Edge on Mac is supported. macOS may show a Bluetooth permission prompt the first time — click OK to allow it.' };
+  if (isWindows && (isChrome || isEdge))
+    return { type: 'ok', text: '✓ Chrome / Edge on Windows is supported. Make sure Bluetooth is turned on in Windows Settings.' };
+
+  return null;
+}
+
+function getConnectInstructions() {
+  const ua = navigator.userAgent;
+  const isMac = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(ua);
+  if (isMac) return 'Click Connect → allow Bluetooth access → select Изумруд';
+  if (/Android/.test(ua)) return 'Click Connect → enable Bluetooth if prompted → select Изумруд';
+  return 'Click Connect → select Изумруд from the browser popup';
+}
+
+function initGuide() {
+  const tip = getPlatformInfo();
+  if (tip) {
+    const el = document.getElementById('platform-tip');
+    el.textContent = tip.text;
+    el.className = 'platform-tip ' + tip.type;
+    el.hidden = false;
+  }
+
+  document.getElementById('step-connect-desc').textContent = getConnectInstructions();
+
+  const guide = document.getElementById('guide');
+  document.querySelector('.guide-header').addEventListener('click', () => {
+    guide.classList.toggle('collapsed');
+  });
 }
 
 // ── Layout serialization ──────────────────────────────────────────────────────
@@ -114,6 +175,8 @@ async function sendLayout() {
     setStatus('Committing…');
     await controlChar.writeValueWithResponse(new Uint8Array([CMD_COMMIT]));
 
+    savedLayout = deepClone(layout);
+    renderGrid(); // clear modified indicators
     setStatus('Layout saved to keyboard!', 'ok');
   } catch (err) {
     try {
@@ -121,7 +184,7 @@ async function sendLayout() {
     } catch (_) {}
     setStatus('Send failed: ' + err.message, 'error');
   } finally {
-    document.getElementById('btn-send').disabled = false;
+    document.getElementById('btn-send').disabled = !bleDevice;
   }
 }
 
@@ -143,6 +206,9 @@ function renderGrid() {
 
       if (selectedCell && selectedCell.row === r && selectedCell.col === c)
         cell.classList.add('selected');
+
+      if (!keyEqual(layout[activeLayer][r][c], savedLayout[activeLayer][r][c]))
+        cell.classList.add('modified');
 
       const label = getLabel(code, modmask);
       cell.textContent = label;
@@ -189,14 +255,20 @@ function initPresetSelector() {
 }
 
 // ── Key picker ────────────────────────────────────────────────────────────────
-function buildPicker() {
+function buildPicker(filter = '') {
   const groups = getKeysByGroup();
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
+  const q = filter.trim().toLowerCase();
+  let totalVisible = 0;
+
   for (const groupName of GROUP_ORDER) {
-    const keys = groups[groupName];
-    if (!keys || keys.length === 0) continue;
+    const keys = (groups[groupName] || []).filter(
+      k => !q || k.label.toLowerCase().includes(q)
+    );
+    if (keys.length === 0) continue;
+    totalVisible += keys.length;
 
     const section = document.createElement('div');
     section.className = 'picker-group';
@@ -214,12 +286,29 @@ function buildPicker() {
       btn.textContent = key.label;
       btn.dataset.code = key.code;
       btn.dataset.modmask = key.modmask;
+
+      if (selectedCell) {
+        const [curCode, curMod] = layout[activeLayer][selectedCell.row][selectedCell.col];
+        if (key.code === curCode && key.modmask === curMod)
+          btn.classList.add('current');
+      }
+
       btn.addEventListener('click', () => assignKey(key.code, key.modmask));
       keysEl.appendChild(btn);
     }
 
     section.appendChild(keysEl);
     container.appendChild(section);
+  }
+
+  let noResults = document.getElementById('picker-no-results');
+  if (totalVisible === 0) {
+    if (!noResults) {
+      noResults = document.createElement('p');
+      noResults.id = 'picker-no-results';
+    }
+    noResults.textContent = `No keys matching "${filter}"`;
+    container.appendChild(noResults);
   }
 }
 
@@ -228,20 +317,16 @@ function openPicker(row, col) {
   renderGrid();
 
   const [code, modmask] = layout[activeLayer][row][col];
-
-  // Highlight currently assigned key in picker
-  document.querySelectorAll('.picker-key').forEach(btn => {
-    btn.classList.toggle(
-      'current',
-      parseInt(btn.dataset.code) === code && parseInt(btn.dataset.modmask) === modmask
-    );
-  });
-
   const label = getLabel(code, modmask);
   document.getElementById('picker-title').textContent =
     `Row ${row + 1}, Col ${col + 1}  —  currently: ${label}`;
 
+  const search = document.getElementById('picker-search');
+  search.value = '';
+  buildPicker();
+
   document.getElementById('picker-overlay').classList.add('open');
+  search.focus();
 }
 
 function closePicker() {
@@ -263,9 +348,9 @@ function init() {
     document.getElementById('btn-connect').disabled = true;
   }
 
+  initGuide();
   initLayerTabs();
   initPresetSelector();
-  buildPicker();
   renderGrid();
 
   document.getElementById('btn-connect').addEventListener('click', connect);
@@ -275,6 +360,10 @@ function init() {
     if (e.target === e.currentTarget) closePicker();
   });
   document.getElementById('picker-close').addEventListener('click', closePicker);
+
+  document.getElementById('picker-search').addEventListener('input', e => {
+    buildPicker(e.target.value);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

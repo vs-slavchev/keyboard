@@ -12,6 +12,7 @@
   --key-hover: #2a3a6a;
   --key-sel:   #e94560;
   --ok:        #4caf50;
+  --warn:      #ff9800;
   --err:       #e94560;
   --radius:    6px;
   --gap:       5px;
@@ -36,6 +37,114 @@ h1 {
   letter-spacing: 0.05em;
   color: var(--accent);
 }
+
+/* ── Guide ─────────────────────────────────────────────────────────────────── */
+.guide {
+  background: var(--surface);
+  border: 1px solid var(--accent2);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 900px;
+  overflow: hidden;
+}
+
+.guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.guide-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.guide-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  transition: transform 0.2s;
+}
+
+.guide-toggle:hover { color: var(--text); background: none; border: none; }
+
+.guide.collapsed .guide-toggle { transform: rotate(180deg); }
+
+.guide-body {
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--accent2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guide.collapsed .guide-body { display: none; }
+
+.steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  list-style: none;
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 100px;
+}
+
+.step-arrow {
+  color: var(--accent2);
+  font-size: 1.5rem;
+  align-self: center;
+  flex: 0;
+  padding: 0 4px;
+  padding-bottom: 20px;
+}
+
+.step-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.step strong {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.step-desc {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  max-width: 120px;
+  line-height: 1.4;
+}
+
+.platform-tip {
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border-left: 3px solid var(--accent2);
+  background: rgba(83,52,131,0.2);
+  color: var(--text-dim);
+}
+
+.platform-tip.ok   { border-left-color: var(--ok);   background: rgba(76,175,80,0.1);  color: #a5d6a7; }
+.platform-tip.warn { border-left-color: var(--warn);  background: rgba(255,152,0,0.1);  color: #ffcc80; }
+.platform-tip.err  { border-left-color: var(--err);   background: rgba(233,69,96,0.1);  color: #ef9a9a; }
 
 /* ── Toolbar ───────────────────────────────────────────────────────────────── */
 .toolbar {
@@ -175,6 +284,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   box-shadow: 0 4px 12px rgba(233,69,96,0.4);
 }
 
+.key-cell.modified {
+  border-color: var(--warn);
+}
+
 .key-cell.long-label { font-size: 0.65rem; }
 
 /* ── Picker overlay ────────────────────────────────────────────────────────── */
@@ -206,16 +319,30 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .picker-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
+  gap: 10px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--accent2);
-  gap: 12px;
 }
 
 #picker-title {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-dim);
+  flex-shrink: 0;
 }
+
+#picker-search {
+  flex: 1;
+  background: var(--key-bg);
+  border: 1px solid var(--accent2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 5px 10px;
+  outline: none;
+}
+
+#picker-search:focus { border-color: var(--accent); }
+#picker-search::placeholder { color: var(--text-dim); }
 
 #picker-close {
   background: none;
@@ -224,24 +351,32 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   font-size: 1.3rem;
   padding: 2px 8px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 #picker-close:hover { color: var(--accent); background: none; border: none; }
 
 #picker-groups {
   overflow-y: auto;
-  padding: 14px 18px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+}
+
+#picker-no-results {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 20px 0;
 }
 
 .picker-group h3 {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
 .picker-keys {
