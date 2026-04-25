@@ -97,16 +97,16 @@ byte col_pins[NUM_COLS] = {32, 33, 25, 26, 27, 14, 12, 13, 19, 18, 5, 17};
 
 byte layout[NUM_LAYOUT_LEVELS][NUM_ROWS][NUM_COLS] = {
   {
-    {K_TAB, 'q', 'w', 'f', 'p', 'b', 'j', 'l', 'u', 'y', '-', K_BKS},
-    {K_ESC, 'a', 'r', 's', 't', 'g', 'k', 'n', 'e', 'i', 'o', K_ETR},
-    {K_S_L, 'z', 'x', 'c', 'v', 'd', 'm', 'h', ',', '.', '"', K_S_R},
-    {K_C_L, ']', K_G_L, K_A_L, HIGHR, ' ', ';', '{', '(', '[', '=', '/'}
+    {K_TAB, 0x71, 0x77, 0x66, 0x70, 0x62, 0x6A, 0x6C, 0x75, 0x79, 0x2D, K_BKS},
+    {K_ESC, 0x61, 0x72, 0x73, 0x74, 0x67, 0x6B, 0x6E, 0x65, 0x69, 0x6F, K_ETR},
+    {K_S_L, 0x7A, 0x78, 0x63, 0x76, 0x64, 0x6D, 0x68, 0x2C, 0x2E, 0x22, K_S_R},
+    {K_C_L, 0x5D, K_G_L, K_A_L, HIGHR, 0x20, 0x3B, 0x7B, 0x28, 0x5B, 0x3D, 0x2F}
   },
   {
-    {'`', K_INS, K_DEL, K_HOM, K_END, K_PUP, K_PDN, '7', '8', '9', '\\', K_BKS},
-    {K_ESC, '`', K_F04, K_F05, K_F06, K_NON, K_NON, '4', '5', '6', '\'', K_ETR},
-    {K_S_L, K_NON, K_NON, K_NON, BATLV, K_NON, K_NON, '1', '2', '3', K_AUP, K_S_R},
-    {K_C_L, K_NON, K_G_L, K_A_L, HIGHR, ' ', CTALD, K_CPS, '0', K_LFT, K_DWN, K_RHT}
+    {0x60, K_INS, K_DEL, K_HOM, K_END, K_PUP, K_PDN, 0x37, 0x38, 0x39, 0x5C, K_BKS},
+    {K_ESC, 0x60, K_F04, K_F05, K_F06, K_NON, K_NON, 0x34, 0x35, 0x36, 0x27, K_ETR},
+    {K_S_L, K_NON, K_NON, K_NON, BATLV, K_NON, K_NON, 0x31, 0x32, 0x33, K_AUP, K_S_R},
+    {K_C_L, K_NON, K_G_L, K_A_L, HIGHR, 0x20, CTALD, K_CPS, 0x30, K_LFT, K_DWN, K_RHT}
   }
 };
 
