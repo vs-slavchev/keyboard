@@ -64,12 +64,13 @@
 #define MOD_G_R 0x80
 
 // BLE config service
-#define CONFIG_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CONTROL_CHAR_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define DATA_CHAR_UUID      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-#define CMD_ENTER_CONFIG    0x01
-#define CMD_EXIT_CONFIG     0x02
-#define CMD_COMMIT          0x03
+#define CONFIG_SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CONTROL_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define DATA_CHAR_UUID          "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+#define READ_LAYOUT_CHAR_UUID   "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define CMD_ENTER_CONFIG        0x01
+#define CMD_EXIT_CONFIG         0x02
+#define CMD_COMMIT              0x03
 
 #define BATTERY_GAUGE_PIN 35
 #define LED_BATTERY_PIN_L 22
@@ -298,6 +299,14 @@ void release_key(byte row, byte col) {
   }
 }
 
+class ReadLayoutCallback : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic* pChar) override {
+    uint8_t buf[LAYOUT_BYTES];
+    get_layout_bytes(buf);
+    pChar->setValue(buf, LAYOUT_BYTES);
+  }
+};
+
 class ControlCallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
     if (pChar->getLength() < 1) return;
@@ -334,6 +343,10 @@ void init_ble_config_service() {
   BLEServer* pServer = keyboard.pServer;
 
   BLEService* pConfigService = pServer->createService(CONFIG_SERVICE_UUID);
+
+  BLECharacteristic* pReadChar = pConfigService->createCharacteristic(
+    READ_LAYOUT_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
+  pReadChar->setCallbacks(new ReadLayoutCallback());
 
   BLECharacteristic* pControlChar = pConfigService->createCharacteristic(
     CONTROL_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);

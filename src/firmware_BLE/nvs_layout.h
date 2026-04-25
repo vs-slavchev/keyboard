@@ -64,3 +64,7 @@ inline void apply_and_save_layout(uint8_t* incoming) {
   _nvs_deserialize(incoming);
   save_layout_to_nvs();
 }
+
+inline void get_layout_bytes(uint8_t* buf) {
+  _nvs_serialize(buf);
+}

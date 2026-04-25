@@ -2,13 +2,14 @@ import { KEYS, GROUP_ORDER, getLabel, getKeysByGroup } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
-const CONFIG_SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-const CONTROL_CHAR_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
-const DATA_CHAR_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-const CMD_ENTER_CONFIG    = 0x01;
-const CMD_EXIT_CONFIG     = 0x02;
-const CMD_COMMIT          = 0x03;
-const CHUNK_DATA_BYTES    = 18;
+const CONFIG_SERVICE_UUID  = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+const CONTROL_CHAR_UUID    = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+const DATA_CHAR_UUID       = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const READ_LAYOUT_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const CMD_ENTER_CONFIG     = 0x01;
+const CMD_EXIT_CONFIG      = 0x02;
+const CMD_COMMIT           = 0x03;
+const CHUNK_DATA_BYTES     = 18;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let layout = deepClone(PRESETS[DEFAULT_PRESET]);
@@ -97,7 +98,22 @@ function initGuide() {
   });
 }
 
-// ── Layout serialization ──────────────────────────────────────────────────────
+// ── Layout serialization / deserialization ────────────────────────────────────
+function parseLayoutFromBytes(dataView) {
+  const result = [];
+  let idx = 0;
+  for (let l = 0; l < 2; l++) {
+    result[l] = [];
+    for (let r = 0; r < 4; r++) {
+      result[l][r] = [];
+      for (let c = 0; c < 12; c++) {
+        result[l][r][c] = [dataView.getUint8(idx++), dataView.getUint8(idx++)];
+      }
+    }
+  }
+  return result;
+}
+
 function serializeLayout() {
   const buf = new Uint8Array(192);
   let idx = 0;
@@ -125,10 +141,17 @@ async function connect() {
     bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
     setStatus('Connecting…');
-    const server  = await bleDevice.gatt.connect();
-    const service = await server.getPrimaryService(CONFIG_SERVICE_UUID);
-    controlChar   = await service.getCharacteristic(CONTROL_CHAR_UUID);
-    dataChar      = await service.getCharacteristic(DATA_CHAR_UUID);
+    const server   = await bleDevice.gatt.connect();
+    const service  = await server.getPrimaryService(CONFIG_SERVICE_UUID);
+    controlChar    = await service.getCharacteristic(CONTROL_CHAR_UUID);
+    dataChar       = await service.getCharacteristic(DATA_CHAR_UUID);
+    const readChar = await service.getCharacteristic(READ_LAYOUT_CHAR_UUID);
+
+    setStatus('Reading layout from keyboard…');
+    const value = await readChar.readValue();
+    layout = parseLayoutFromBytes(value);
+    savedLayout = deepClone(layout);
+    renderGrid();
 
     setBleStatus(true);
     setStatus('Connected to ' + bleDevice.name, 'ok');
