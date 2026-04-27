@@ -78,6 +78,7 @@
 
 #define DEBOUNCE_DELAY 15
 #define LEDS_DURATION_MS 300
+#define BATTERY_UPDATE_INTERVAL_MS 60000
 
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
@@ -88,6 +89,7 @@ byte layout_level = 0;
 
 bool ledsOn = false;
 unsigned long ledsOnEndTime;
+unsigned long lastBatteryUpdateTime = 0;
 
 bool config_mode = false;
 uint8_t incoming_buffer[LAYOUT_BYTES];
@@ -137,6 +139,8 @@ void setup() {
   keyboard.begin();
   load_layout_from_nvs();
   init_ble_config_service();
+  get_battery_percent();
+  lastBatteryUpdateTime = millis();
   Serial.begin(9600);
   Serial.println("Started.");
 
@@ -147,6 +151,10 @@ void loop() {
   scan_switches();
   if (!config_mode && keyboard.isConnected()) {
     process_keys();
+    if (millis() - lastBatteryUpdateTime >= BATTERY_UPDATE_INTERVAL_MS) {
+      get_battery_percent();
+      lastBatteryUpdateTime = millis();
+    }
   }
   tick_battery_leds();
 
