@@ -315,7 +315,7 @@ class DataCallback : public BLECharacteristicCallbacks {
 };
 
 void init_ble_config_service() {
-  BLEServer* pServer = BLEDevice::getServer();
+  BLEServer* pServer = keyboard.pServer;
 
   BLEService* pConfigService = pServer->createService(CONFIG_SERVICE_UUID);
 
