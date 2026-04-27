@@ -66,6 +66,18 @@
 #define LEDS_DURATION_MS 300
 #define BATTERY_UPDATE_INTERVAL_MS 60000
 
+// forward declarations (avoids ctags prototype-generation issues)
+void scan_switches();
+void process_keys();
+void press_key(byte row, byte col);
+void release_key(byte row, byte col);
+int  get_battery_percent();
+void turn_leds_on_for(int millisOn);
+void tick_battery_leds();
+void init_battery_optimisations();
+void init_ble_config_service();
+byte get_layout_code(byte row, byte col);
+
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
 const byte NUM_ROWS = 4;
