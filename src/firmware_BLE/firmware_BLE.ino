@@ -1,7 +1,4 @@
-#include <BleKeyboard.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
+#include "ble_hid_keyboard.h"
 #include <esp_wifi.h>
 #include "driver/adc.h"
 #include "nvs_layout.h"
