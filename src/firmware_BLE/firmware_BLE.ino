@@ -52,17 +52,6 @@
 #define BATLV 0xF2 //battery level
 #define HIGHR 0xFF
 
-// Modifier mask bits used in layout_mod array
-// Bit 0=Ctrl L, 1=Shift L, 2=Alt L, 3=GUI L, 4=Ctrl R, 5=Shift R, 6=Alt R, 7=GUI R
-#define MOD_C_L 0x01
-#define MOD_S_L 0x02
-#define MOD_A_L 0x04
-#define MOD_G_L 0x08
-#define MOD_C_R 0x10
-#define MOD_S_R 0x20
-#define MOD_A_R 0x40
-#define MOD_G_R 0x80
-
 // BLE config service
 #define CONFIG_SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CONTROL_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -113,8 +102,8 @@ byte layout[NUM_LAYOUT_LEVELS][NUM_ROWS][NUM_COLS] = {
   }
 };
 
-// layout_mod[level][row][col] = modifier mask (high byte of the 2-byte key entry)
-// All zero by default (no extra modifiers on any key)
+// layout_mod[level][row][col] = modifier keycode to hold while pressing the key
+// 0x00 = no modifier; 0x80-0x87 = K_C_L/K_S_L/K_A_L/K_G_L/K_C_R/K_S_R/K_A_R/K_G_R
 byte layout_mod[NUM_LAYOUT_LEVELS][NUM_ROWS][NUM_COLS] = {};
 
 bool pressed_switches[NUM_ROWS][NUM_COLS] = {
@@ -232,35 +221,13 @@ void process_keys() {
   }
 }
 
-void press_modifiers(byte modmask) {
-  if (modmask & MOD_C_L) keyboard.press(K_C_L);
-  if (modmask & MOD_S_L) keyboard.press(K_S_L);
-  if (modmask & MOD_A_L) keyboard.press(K_A_L);
-  if (modmask & MOD_G_L) keyboard.press(K_G_L);
-  if (modmask & MOD_C_R) keyboard.press(K_C_R);
-  if (modmask & MOD_S_R) keyboard.press(K_S_R);
-  if (modmask & MOD_A_R) keyboard.press(K_A_R);
-  if (modmask & MOD_G_R) keyboard.press(K_G_R);
-}
-
-void release_modifiers(byte modmask) {
-  if (modmask & MOD_C_L) keyboard.release(K_C_L);
-  if (modmask & MOD_S_L) keyboard.release(K_S_L);
-  if (modmask & MOD_A_L) keyboard.release(K_A_L);
-  if (modmask & MOD_G_L) keyboard.release(K_G_L);
-  if (modmask & MOD_C_R) keyboard.release(K_C_R);
-  if (modmask & MOD_S_R) keyboard.release(K_S_R);
-  if (modmask & MOD_A_R) keyboard.release(K_A_R);
-  if (modmask & MOD_G_R) keyboard.release(K_G_R);
-}
-
 void press_key(byte row, byte col) {
   key_states[row][col] = true;
   byte keycode = get_layout_code(row, col);
-  byte modmask = layout_mod[layout_level][row][col];
+  byte mod = layout_mod[layout_level][row][col];
   bool is_normal_key = keycode < FIRST_META_KEY;
   if (is_normal_key) {
-    press_modifiers(modmask);
+    if (mod) keyboard.press(mod);
     keyboard.press(keycode);
   } else {
     switch (keycode) {
@@ -285,11 +252,11 @@ void press_key(byte row, byte col) {
 void release_key(byte row, byte col) {
   key_states[row][col] = false;
   byte keycode = get_layout_code(row, col);
-  byte modmask = layout_mod[layout_level][row][col];
+  byte mod = layout_mod[layout_level][row][col];
   bool is_normal_key = keycode < FIRST_META_KEY;
   if (is_normal_key) {
     keyboard.release(keycode);
-    release_modifiers(modmask);
+    if (mod) keyboard.release(mod);
   } else {
     switch (keycode) {
       case HIGHR:

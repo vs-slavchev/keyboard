@@ -130,19 +130,19 @@ export const KEYS = [
   { code: 0xF2, modmask: 0, label: 'Battery',      group: 'Meta' },
 
   // ── Common combos ──────────────────────────────────────────────────────────
-  { code: 0x63, modmask: 0x01, label: 'Ctrl+C', group: 'Combos' },
-  { code: 0x76, modmask: 0x01, label: 'Ctrl+V', group: 'Combos' },
-  { code: 0x78, modmask: 0x01, label: 'Ctrl+X', group: 'Combos' },
-  { code: 0x7A, modmask: 0x01, label: 'Ctrl+Z', group: 'Combos' },
-  { code: 0x79, modmask: 0x01, label: 'Ctrl+Y', group: 'Combos' },
-  { code: 0x61, modmask: 0x01, label: 'Ctrl+A', group: 'Combos' },
-  { code: 0x73, modmask: 0x01, label: 'Ctrl+S', group: 'Combos' },
-  { code: 0x77, modmask: 0x01, label: 'Ctrl+W', group: 'Combos' },
-  { code: 0x74, modmask: 0x01, label: 'Ctrl+T', group: 'Combos' },
-  { code: 0x66, modmask: 0x01, label: 'Ctrl+F', group: 'Combos' },
-  { code: 0x6E, modmask: 0x01, label: 'Ctrl+N', group: 'Combos' },
-  { code: 0xC2, modmask: 0x01, label: 'Ctrl+F1', group: 'Combos' },
-  { code: 0xC5, modmask: 0x01, label: 'Ctrl+F4', group: 'Combos' },
+  { code: 0x63, modmask: 0x80, label: 'Ctrl+C', group: 'Combos' },
+  { code: 0x76, modmask: 0x80, label: 'Ctrl+V', group: 'Combos' },
+  { code: 0x78, modmask: 0x80, label: 'Ctrl+X', group: 'Combos' },
+  { code: 0x7A, modmask: 0x80, label: 'Ctrl+Z', group: 'Combos' },
+  { code: 0x79, modmask: 0x80, label: 'Ctrl+Y', group: 'Combos' },
+  { code: 0x61, modmask: 0x80, label: 'Ctrl+A', group: 'Combos' },
+  { code: 0x73, modmask: 0x80, label: 'Ctrl+S', group: 'Combos' },
+  { code: 0x77, modmask: 0x80, label: 'Ctrl+W', group: 'Combos' },
+  { code: 0x74, modmask: 0x80, label: 'Ctrl+T', group: 'Combos' },
+  { code: 0x66, modmask: 0x80, label: 'Ctrl+F', group: 'Combos' },
+  { code: 0x6E, modmask: 0x80, label: 'Ctrl+N', group: 'Combos' },
+  { code: 0xC2, modmask: 0x80, label: 'Ctrl+F1', group: 'Combos' },
+  { code: 0xC5, modmask: 0x80, label: 'Ctrl+F4', group: 'Combos' },
 ];
 
 export const GROUP_ORDER = [
