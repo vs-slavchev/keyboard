@@ -13,8 +13,7 @@ const CHUNK_DATA_BYTES     = 18;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let layout = deepClone(PRESETS[DEFAULT_PRESET]);
-let savedLayout = deepClone(PRESETS[DEFAULT_PRESET]); // last successfully sent layout
-let activeLayer = 0;
+let savedLayout = deepClone(PRESETS[DEFAULT_PRESET]);
 let selectedCell = null;
 let bleDevice = null;
 let controlChar = null;
@@ -62,7 +61,9 @@ function getPlatformInfo() {
   if (isSafari)
     return { type: 'err', text: '⚠️ Web Bluetooth is not supported in Safari. Please open this page in Chrome or Edge.' };
   if (isLinux)
-    return { type: 'warn', text: '💡 On Linux, Web Bluetooth may need to be enabled first: open chrome://flags/#enable-experimental-web-platform-features and set it to Enabled, then relaunch Chrome.' };
+    return navigator.bluetooth
+      ? null
+      : { type: 'warn', text: '💡 On Linux, Web Bluetooth may need to be enabled first: open chrome://flags/#enable-experimental-web-platform-features and set it to Enabled, then relaunch Chrome.' };
   if (isAndroid)
     return { type: 'ok', text: '✓ Chrome on Android is supported. Make sure Bluetooth is enabled in system Settings before connecting.' };
   if (isMac && (isChrome || isEdge))
@@ -120,8 +121,8 @@ function serializeLayout() {
   for (let l = 0; l < 2; l++)
     for (let r = 0; r < 4; r++)
       for (let c = 0; c < 12; c++) {
-        buf[idx++] = layout[l][r][c][0]; // keycode
-        buf[idx++] = layout[l][r][c][1]; // modmask
+        buf[idx++] = layout[l][r][c][0];
+        buf[idx++] = layout[l][r][c][1];
       }
   return buf;
 }
@@ -199,7 +200,7 @@ async function sendLayout() {
     await controlChar.writeValueWithResponse(new Uint8Array([CMD_COMMIT]));
 
     savedLayout = deepClone(layout);
-    renderGrid(); // clear modified indicators
+    renderGrid();
     setStatus('Layout saved to keyboard!', 'ok');
   } catch (err) {
     try {
@@ -212,51 +213,56 @@ async function sendLayout() {
 }
 
 // ── Grid rendering ────────────────────────────────────────────────────────────
+const LAYER_NAMES = [
+  'Layer 0 — Base (Keys and Modifiers)',
+  'Layer 1 — Numbers / Function keys',
+];
+
 function renderGrid() {
   const grid = document.getElementById('keyboard-grid');
   grid.innerHTML = '';
 
-  for (let r = 0; r < 4; r++) {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'key-row';
+  for (let l = 0; l < 2; l++) {
+    const label = document.createElement('div');
+    label.className = 'layer-label';
+    label.textContent = LAYER_NAMES[l];
+    grid.appendChild(label);
 
-    for (let c = 0; c < 12; c++) {
-      const [code, modmask] = layout[activeLayer][r][c];
-      const cell = document.createElement('button');
-      cell.className = 'key-cell';
-      cell.dataset.row = r;
-      cell.dataset.col = c;
+    for (let r = 0; r < 4; r++) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'key-row';
 
-      if (selectedCell && selectedCell.row === r && selectedCell.col === c)
-        cell.classList.add('selected');
+      for (let c = 0; c < 12; c++) {
+        const [code, modmask] = layout[l][r][c];
+        const cell = document.createElement('button');
+        cell.className = 'key-cell';
+        cell.dataset.layer = l;
+        cell.dataset.row = r;
+        cell.dataset.col = c;
 
-      if (!keyEqual(layout[activeLayer][r][c], savedLayout[activeLayer][r][c]))
-        cell.classList.add('modified');
+        if (selectedCell && selectedCell.layer === l && selectedCell.row === r && selectedCell.col === c)
+          cell.classList.add('selected');
 
-      const label = getLabel(code, modmask);
-      cell.textContent = label;
-      if (label.length > 5) cell.classList.add('long-label');
+        if (!keyEqual(layout[l][r][c], savedLayout[l][r][c]))
+          cell.classList.add('modified');
 
-      cell.addEventListener('click', () => openPicker(r, c));
-      rowEl.appendChild(cell);
+        const keyLabel = getLabel(code, modmask);
+        cell.textContent = keyLabel;
+        if (keyLabel.length > 5) cell.classList.add('long-label');
+
+        cell.addEventListener('click', () => openPicker(l, r, c));
+        rowEl.appendChild(cell);
+      }
+
+      grid.appendChild(rowEl);
     }
 
-    grid.appendChild(rowEl);
+    if (l < 1) {
+      const sep = document.createElement('div');
+      sep.className = 'layer-sep';
+      grid.appendChild(sep);
+    }
   }
-}
-
-// ── Layer tabs ────────────────────────────────────────────────────────────────
-function initLayerTabs() {
-  document.querySelectorAll('.layer-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      activeLayer = parseInt(tab.dataset.layer);
-      document.querySelectorAll('.layer-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      selectedCell = null;
-      closePicker();
-      renderGrid();
-    });
-  });
 }
 
 // ── Preset selector ───────────────────────────────────────────────────────────
@@ -311,7 +317,7 @@ function buildPicker(filter = '') {
       btn.dataset.modmask = key.modmask;
 
       if (selectedCell) {
-        const [curCode, curMod] = layout[activeLayer][selectedCell.row][selectedCell.col];
+        const [curCode, curMod] = layout[selectedCell.layer][selectedCell.row][selectedCell.col];
         if (key.code === curCode && key.modmask === curMod)
           btn.classList.add('current');
       }
@@ -335,14 +341,14 @@ function buildPicker(filter = '') {
   }
 }
 
-function openPicker(row, col) {
-  selectedCell = { row, col };
+function openPicker(layer, row, col) {
+  selectedCell = { layer, row, col };
   renderGrid();
 
-  const [code, modmask] = layout[activeLayer][row][col];
-  const label = getLabel(code, modmask);
+  const [code, modmask] = layout[layer][row][col];
+  const keyLabel = getLabel(code, modmask);
   document.getElementById('picker-title').textContent =
-    `Row ${row + 1}, Col ${col + 1}  —  currently: ${label}`;
+    `${LAYER_NAMES[layer]}, Row ${row + 1}, Col ${col + 1}  —  currently: ${keyLabel}`;
 
   const search = document.getElementById('picker-search');
   search.value = '';
@@ -360,7 +366,7 @@ function closePicker() {
 
 function assignKey(code, modmask) {
   if (!selectedCell) return;
-  layout[activeLayer][selectedCell.row][selectedCell.col] = [code, modmask];
+  layout[selectedCell.layer][selectedCell.row][selectedCell.col] = [code, modmask];
   closePicker();
 }
 
@@ -372,7 +378,6 @@ function init() {
   }
 
   initGuide();
-  initLayerTabs();
   initPresetSelector();
   renderGrid();
 
