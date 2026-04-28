@@ -35,7 +35,7 @@ function setBleStatus(connected) {
   const btn = document.getElementById('btn-connect');
   btn.textContent = connected ? 'Disconnect' : 'Connect';
   btn.classList.toggle('connected', connected);
-  document.getElementById('btn-send').disabled = !connected;
+  document.getElementById('btn-save').disabled = !connected;
 }
 
 function keyEqual(a, b) {
@@ -176,7 +176,7 @@ async function sendLayout() {
   if (!controlChar || !dataChar) return;
 
   const buf = serializeLayout();
-  document.getElementById('btn-send').disabled = true;
+  document.getElementById('btn-save').disabled = true;
 
   try {
     setStatus('Entering config mode…');
@@ -207,7 +207,7 @@ async function sendLayout() {
     } catch (_) {}
     setStatus('Send failed: ' + err.message, 'error');
   } finally {
-    document.getElementById('btn-send').disabled = !bleDevice;
+    document.getElementById('btn-save').disabled = !bleDevice;
   }
 }
 
@@ -377,7 +377,7 @@ function init() {
   renderGrid();
 
   document.getElementById('btn-connect').addEventListener('click', connect);
-  document.getElementById('btn-send').addEventListener('click', sendLayout);
+  document.getElementById('btn-save').addEventListener('click', sendLayout);
 
   document.getElementById('picker-overlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closePicker();

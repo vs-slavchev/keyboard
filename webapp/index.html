@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Изумруд — Key Remapper</title>
+  <title>Key Remapper</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <h1>Изумруд Key Remapper</h1>
+  <h1>Key Remapper</h1>
 
   <!-- Step-by-step guide -->
   <section id="guide" class="guide">
@@ -21,13 +21,13 @@
         <li class="step">
           <span class="step-icon">⚡</span>
           <strong>Power on</strong>
-          <span class="step-desc">Turn on your Изумруд keyboard</span>
+          <span class="step-desc">Turn on your keyboard</span>
         </li>
         <li class="step step-arrow">›</li>
         <li class="step">
           <span class="step-icon">🔵</span>
           <strong>Connect</strong>
-          <span class="step-desc" id="step-connect-desc">Click Connect and select Изумруд</span>
+          <span class="step-desc" id="step-connect-desc">Click Connect and select your keyboard</span>
         </li>
         <li class="step step-arrow">›</li>
         <li class="step">
@@ -38,8 +38,8 @@
         <li class="step step-arrow">›</li>
         <li class="step">
           <span class="step-icon">💾</span>
-          <strong>Send</strong>
-          <span class="step-desc">Click Send to Keyboard — saved wirelessly</span>
+          <strong>Save</strong>
+          <span class="step-desc">Click Save — saved wirelessly</span>
         </li>
       </ol>
       <div id="platform-tip" class="platform-tip" hidden></div>
@@ -51,12 +51,12 @@
     <select id="preset-select"></select>
 
     <div class="layer-tabs">
-      <button class="layer-tab active" data-layer="0">Layer 0 — Base</button>
-      <button class="layer-tab" data-layer="1">Layer 1 — Fn / Num</button>
+      <button class="layer-tab active" data-layer="0">Layer 0 — Base (Keys and Modifiers)</button>
+      <button class="layer-tab" data-layer="1">Layer 1 — Numbers / Function keys</button>
     </div>
 
     <button id="btn-connect">Connect</button>
-    <button id="btn-send" disabled>Send to Keyboard</button>
+    <button id="btn-save" disabled>Save to Keyboard</button>
 
     <span id="status" class="status info">Not connected</span>
   </div>
