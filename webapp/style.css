@@ -133,6 +133,30 @@ h1 {
   line-height: 1.4;
 }
 
+.step-label-dim {
+  font-weight: 400;
+  font-size: 0.8em;
+  color: var(--text-dim);
+}
+
+kbd {
+  display: inline-block;
+  background: var(--surface2);
+  border: 1px solid var(--accent2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.guide-note {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-align: center;
+  padding-top: 4px;
+}
+
 .platform-tip {
   font-size: 0.8rem;
   padding: 8px 12px;
