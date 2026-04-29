@@ -98,10 +98,10 @@ export const KEYS = [
   { code: 0xC1, modmask: 0, label: 'Caps Lock', group: 'Special' },
 
   // ── Navigation ─────────────────────────────────────────────────────────────
-  { code: 0xD7, modmask: 0, label: '→',      group: 'Navigation' },
-  { code: 0xD8, modmask: 0, label: '←',      group: 'Navigation' },
-  { code: 0xD9, modmask: 0, label: '↓',      group: 'Navigation' },
-  { code: 0xDA, modmask: 0, label: '↑',      group: 'Navigation' },
+  { code: 0xD7, modmask: 0, label: '→',       group: 'Navigation' },
+  { code: 0xD8, modmask: 0, label: '←',       group: 'Navigation' },
+  { code: 0xD9, modmask: 0, label: '↓',       group: 'Navigation' },
+  { code: 0xDA, modmask: 0, label: '↑',       group: 'Navigation' },
   { code: 0xD1, modmask: 0, label: 'Insert',  group: 'Navigation' },
   { code: 0xD4, modmask: 0, label: 'Delete',  group: 'Navigation' },
   { code: 0xD2, modmask: 0, label: 'Home',    group: 'Navigation' },
@@ -124,10 +124,10 @@ export const KEYS = [
   { code: 0xCD, modmask: 0, label: 'F12', group: 'Function' },
 
   // ── Meta ───────────────────────────────────────────────────────────────────
-  { code: 0x00, modmask: 0, label: 'None',        group: 'Meta' },
-  { code: 0xFF, modmask: 0, label: 'Layer',        group: 'Meta' },
-  { code: 0xF1, modmask: 0, label: 'Ctrl+Alt+Del', group: 'Meta' },
-  { code: 0xF2, modmask: 0, label: 'Battery',      group: 'Meta' },
+  { code: 0x00, modmask: 0, label: 'None',         group: 'Meta' },
+  { code: 0xFF, modmask: 0, label: 'Layer',         group: 'Meta' },
+  { code: 0xF1, modmask: 0, label: 'Ctrl+Alt+Del',  group: 'Meta' },
+  { code: 0xF2, modmask: 0, label: 'Battery',       group: 'Meta' },
 
   // ── Common combos ──────────────────────────────────────────────────────────
   { code: 0x63, modmask: 0x80, label: 'Ctrl+C', group: 'Combos' },
