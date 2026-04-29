@@ -77,6 +77,7 @@ void tick_battery_leds();
 void init_battery_optimisations();
 void init_ble_config_service();
 byte get_layout_code(byte row, byte col);
+void check_pairing_combo();
 
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
@@ -86,9 +87,11 @@ const byte NUM_LAYOUT_LEVELS = 2;
 byte layout_level = 0;
 
 bool ledsOn = false;
+bool ledsForcedOn = false;
 unsigned long ledsOnEndTime;
 unsigned long lastBatteryUpdateTime = 0;
 
+bool pairing_allowed = false;
 bool config_mode = false;
 uint8_t incoming_buffer[LAYOUT_BYTES];
 
@@ -147,6 +150,7 @@ void setup() {
 
 void loop() {
   scan_switches();
+  check_pairing_combo();
   if (!config_mode && keyboard.isConnected()) {
     process_keys();
     if (millis() - lastBatteryUpdateTime >= BATTERY_UPDATE_INTERVAL_MS) {
@@ -178,11 +182,28 @@ void turn_leds_on_for(int millisOn) {
 }
 
 void tick_battery_leds() {
+  if (ledsForcedOn) return;
   if (ledsOn && (ledsOnEndTime < millis())) {
     digitalWrite(LED_BATTERY_PIN_L, LOW);
     digitalWrite(LED_BATTERY_PIN_R, LOW);
     ledsOn = false;
   }
+}
+
+// Hold leftmost top key (Tab, row 0 col 0) + leftmost bottom key (Ctrl L,
+// row 3 col 0) simultaneously to open pairing to new devices.  LEDs stay
+// on while the combo is held as a visual indicator.
+void check_pairing_combo() {
+  bool combo = pressed_switches[0][0] && pressed_switches[3][0];
+  if (combo == pairing_allowed) return;
+
+  pairing_allowed = combo;
+  keyboard.set_pairing_mode(pairing_allowed);
+
+  ledsForcedOn = pairing_allowed;
+  digitalWrite(LED_BATTERY_PIN_L, pairing_allowed ? HIGH : LOW);
+  digitalWrite(LED_BATTERY_PIN_R, pairing_allowed ? HIGH : LOW);
+  ledsOn = false; // don't let the timer fight the forced state
 }
 
 void scan_switches() {

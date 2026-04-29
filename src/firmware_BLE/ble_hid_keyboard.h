@@ -3,7 +3,9 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLEHIDDevice.h>
+#include <BLESecurity.h>
 #include <HIDTypes.h>
+#include <esp_gap_ble_api.h>
 
 #define HID_KEYBOARD_APPEARANCE 0x03C1
 
@@ -153,13 +155,43 @@ public:
   BLEServer* pServer;
 
 private:
-  const char*       _name;
-  const char*       _manufacturer;
-  uint8_t           _batteryLevel;
-  BLEHIDDevice*     _hid;
+  const char*        _name;
+  const char*        _manufacturer;
+  uint8_t            _batteryLevel;
+  BLEHIDDevice*      _hid;
   BLECharacteristic* _input;
-  bool              _connected;
-  uint8_t           _report[8]; // [modifier, reserved, k0..k5]
+  bool               _connected;
+  bool               _pairing_mode;
+  uint8_t            _report[8]; // [modifier, reserved, k0..k5]
+
+  // Rebuild the GAP whitelist from NVS-stored bonds so bonded devices can
+  // reconnect without the pairing combo.
+  void _rebuild_whitelist() {
+    esp_ble_gap_clear_whitelist();
+    int count = esp_ble_get_bond_device_num();
+    if (count == 0) return;
+    esp_ble_bond_dev_t* list = new esp_ble_bond_dev_t[count];
+    esp_ble_get_bond_device_list(&count, list);
+    for (int i = 0; i < count; i++) {
+      esp_ble_gap_update_whitelist(true, list[i].bd_addr, BLE_WL_ADDR_TYPE_PUBLIC);
+    }
+    delete[] list;
+  }
+
+  // Handles completion of a new bond: rebuild the whitelist so the newly
+  // bonded device can reconnect without the pairing combo in future.
+  class SecCallbacks : public BLESecurityCallbacks {
+    BleKeyboard* _kb;
+  public:
+    SecCallbacks(BleKeyboard* kb) : _kb(kb) {}
+    void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) override {
+      if (cmpl.success) _kb->_rebuild_whitelist();
+    }
+    bool     onSecurityRequest()            override { return true; }
+    uint32_t onPassKeyRequest()             override { return 0; }
+    void     onPassKeyNotify(uint32_t)      override {}
+    bool     onConfirmPIN(uint32_t)         override { return true; }
+  };
 
   void onConnect(BLEServer* /*server*/) override {
     _connected = true;
@@ -167,7 +199,9 @@ private:
 
   void onDisconnect(BLEServer* /*server*/) override {
     _connected = false;
-    BLEDevice::startAdvertising();
+    // Restart advertising; the filter set by set_pairing_mode() is preserved
+    // in the BLEAdvertising object across stop/start.
+    pServer->getAdvertising()->start();
   }
 
 public:
@@ -176,9 +210,21 @@ public:
               uint8_t     batteryLevel = 100)
     : pServer(nullptr), _name(name), _manufacturer(manufacturer),
       _batteryLevel(batteryLevel), _hid(nullptr), _input(nullptr),
-      _connected(false)
+      _connected(false), _pairing_mode(false)
   {
     memset(_report, 0, sizeof(_report));
+  }
+
+  // Open or close pairing to new devices.
+  // While closed only the GAP whitelist (bonded devices) can connect.
+  void set_pairing_mode(bool allow) {
+    _pairing_mode = allow;
+    BLEAdvertising* pAdv = pServer->getAdvertising();
+    pAdv->stop();
+    // connectWhitelistOnly = !allow: bonded devices always reconnect freely;
+    // new devices only get through when pairing is explicitly opened.
+    pAdv->setScanFilter(false, !allow);
+    pAdv->start();
   }
 
   void begin() {
@@ -197,14 +243,21 @@ public:
     pSecurity->setAuthenticationMode(ESP_LE_AUTH_BOND);
     pSecurity->setCapability(ESP_IO_CAP_NONE);
     pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+    BLEDevice::setSecurityCallbacks(new SecCallbacks(this));
 
     _hid->reportMap((uint8_t*)_hidReportDescriptor, sizeof(_hidReportDescriptor));
     _hid->startServices();
     _hid->setBatteryLevel(_batteryLevel);
 
+    // Populate whitelist from any bonds already stored in NVS, then start
+    // advertising locked: only whitelisted (bonded) devices can connect
+    // until the pairing combo is held.
+    _rebuild_whitelist();
+
     BLEAdvertising* pAdv = pServer->getAdvertising();
     pAdv->setAppearance(HID_KEYBOARD_APPEARANCE);
     pAdv->addServiceUUID(_hid->hidService()->getUUID());
+    pAdv->setScanFilter(false, true); // whitelist-only connections at startup
     pAdv->start();
   }
 
