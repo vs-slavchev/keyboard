@@ -66,6 +66,14 @@
 #define LEDS_DURATION_MS 300
 #define BATTERY_UPDATE_INTERVAL_MS 60000
 
+// Pairing combo: top 3 keys of the leftmost column (rows 0-2, col 0).
+// Hold all 3 with the left hand; right hand stays free for the mouse.
+// Keypresses from these keys are suppressed while the combo is active so
+// no HID output reaches the host regardless of what the keys are mapped to.
+#define PAIRING_COMBO_COL  0
+#define PAIRING_COMBO_SIZE 3
+const byte PAIRING_COMBO_ROWS[PAIRING_COMBO_SIZE] = {0, 1, 2};
+
 // forward declarations (avoids ctags prototype-generation issues)
 void scan_switches();
 void process_keys();
@@ -78,6 +86,7 @@ void init_battery_optimisations();
 void init_ble_config_service();
 byte get_layout_code(byte row, byte col);
 void check_pairing_combo();
+bool is_pairing_combo_key(byte row, byte col);
 
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
@@ -190,20 +199,34 @@ void tick_battery_leds() {
   }
 }
 
-// Hold leftmost top key (Tab, row 0 col 0) + leftmost bottom key (Ctrl L,
-// row 3 col 0) simultaneously to open pairing to new devices.  LEDs stay
-// on while the combo is held as a visual indicator.
+bool is_pairing_combo_key(byte row, byte col) {
+  if (col != PAIRING_COMBO_COL) return false;
+  for (byte i = 0; i < PAIRING_COMBO_SIZE; i++)
+    if (PAIRING_COMBO_ROWS[i] == row) return true;
+  return false;
+}
+
+// Hold the top 3 keys of the leftmost column simultaneously to open pairing.
+// LEDs stay on while the combo is held as a visual indicator.
+// Keypresses from the combo keys are suppressed in process_keys() while
+// pairing_allowed is true, so nothing reaches the host.
 void check_pairing_combo() {
-  bool combo = pressed_switches[0][0] && pressed_switches[3][0];
+  bool combo = true;
+  for (byte i = 0; i < PAIRING_COMBO_SIZE; i++)
+    if (!pressed_switches[PAIRING_COMBO_ROWS[i]][PAIRING_COMBO_COL]) { combo = false; break; }
   if (combo == pairing_allowed) return;
 
   pairing_allowed = combo;
+  if (pairing_allowed) {
+    keyboard.releaseAll();
+    memset(key_states, false, sizeof(key_states));
+  }
   keyboard.set_pairing_mode(pairing_allowed);
 
   ledsForcedOn = pairing_allowed;
   digitalWrite(LED_BATTERY_PIN_L, pairing_allowed ? HIGH : LOW);
   digitalWrite(LED_BATTERY_PIN_R, pairing_allowed ? HIGH : LOW);
-  ledsOn = false; // don't let the timer fight the forced state
+  ledsOn = false;
 }
 
 void scan_switches() {
@@ -237,6 +260,12 @@ void init_battery_optimisations() {
 void process_keys() {
   for (byte row = 0; row < NUM_ROWS; row++) {
     for (byte col = 0; col < NUM_COLS; col++) {
+      if (pairing_allowed && is_pairing_combo_key(row, col)) {
+        // Keep key_states in sync so combo keys don't generate spurious
+        // press/release events when the user slowly lets go of the combo.
+        key_states[row][col] = pressed_switches[row][col];
+        continue;
+      }
       bool is_pressed_state = pressed_switches[row][col];
       if (is_pressed_state) {
         if (!key_states[row][col]) {
