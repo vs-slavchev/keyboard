@@ -101,8 +101,9 @@ body {
 /* ── Connect card ──────────────────────────────────────────────────────────── */
 #view-connect {
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 40px 24px 60px;
+  padding-top: max(40px, calc(50vh - 210px));
 }
 
 .connect-card {
