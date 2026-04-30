@@ -1,65 +1,7 @@
-#include <BleKeyboard.h>
+#include "ble_hid_keyboard.h"
 #include <esp_wifi.h>
 #include "driver/adc.h"
-
-// symbols
-#define K_SPC 0x20 //space
-#define K_DQO 0x22 //"
-#define K_SQO 0x27 //'
-#define K_OPR 0x28 //(
-#define K_CPR 0x29 //)
-#define K_CMA 0x2C //,
-#define K_MIN 0x2D //-
-#define K_DOT 0x2E
-#define K_FSL 0x2F //forward slash
-#define K_SCL 0x3B //;
-#define K_EQU 0x3D //=
-#define K_OSB 0x5B //[
-#define K_CSB 0x5D //]
-#define K_BSL 0x5C //backslash
-#define K_OCB 0x7B //{
-#define K_CCB 0x7D //}
-#define K_BTK 0x60 //`backtick
-
-// letters
-#define KEY_A 0x61
-#define KEY_B 0x62
-#define KEY_C 0x63
-#define KEY_D 0x64
-#define KEY_E 0x65
-#define KEY_F 0x66
-#define KEY_G 0x67
-#define KEY_H 0x68
-#define KEY_I 0x69
-#define KEY_J 0x6A
-#define KEY_K 0x6B
-#define KEY_L 0x6C
-#define KEY_M 0x6D
-#define KEY_N 0x6E
-#define KEY_O 0x6F
-#define KEY_P 0x70
-#define KEY_Q 0x71
-#define KEY_R 0x72
-#define KEY_S 0x73
-#define KEY_T 0x74
-#define KEY_U 0x75
-#define KEY_V 0x76
-#define KEY_W 0x77
-#define KEY_X 0x78
-#define KEY_Y 0x79
-#define KEY_Z 0x7A
-
-// digits
-#define KEY_0 0x30
-#define KEY_1 0x31
-#define KEY_2 0x32
-#define KEY_3 0x33
-#define KEY_4 0x34
-#define KEY_5 0x35
-#define KEY_6 0x36
-#define KEY_7 0x37
-#define KEY_8 0x38
-#define KEY_9 0x39
+#include "nvs_layout.h"
 
 // modifiers
 #define K_C_L 0x80
@@ -76,20 +18,29 @@
 #define K_ESC 0xB1
 #define K_BKS 0xB2 //backspace
 #define K_TAB 0xB3
+#define K_F01 0xC2
+#define K_F02 0xC3
+#define K_F03 0xC4
+#define K_F04 0xC5
+#define K_F05 0xC6
+#define K_F06 0xC7
+#define K_F07 0xC8
+#define K_F08 0xC9
+#define K_F09 0xCA
+#define K_F10 0xCB
+#define K_F11 0xCC
+#define K_F12 0xCD
+#define K_CPS 0xC1 //caps lock
+#define K_INS 0xD1 //insert
+#define K_HOM 0xD2 //home
+#define K_PUP 0xD3 //page up
+#define K_DEL 0xD4 //delete
+#define K_END 0xD5
+#define K_PDN 0xD6 //page down
 #define K_RHT 0xD7 //right arrow
 #define K_LFT 0xD8 //left arrow
 #define K_DWN 0xD9 //down arrow
 #define K_AUP 0xDA //up arrow
-#define K_CPS 0xC1 //caps lock
-#define K_INS 0xD1 //insert
-#define K_DEL 0xD4 //delete
-#define K_HOM 0xD2 //home
-#define K_END 0xD5
-#define K_PUP 0xD3 //page up
-#define K_PDN 0xD6 //page down
-#define K_F04 0xC5
-#define K_F05 0xC6
-#define K_F06 0xC7
 
 // meta
 #define K_NON 0x00
@@ -97,6 +48,15 @@
 #define CTALD 0xF1 //Ctrl Alt Delete
 #define BATLV 0xF2 //battery level
 #define HIGHR 0xFF
+
+// BLE config service
+#define CONFIG_SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CONTROL_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define DATA_CHAR_UUID          "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+#define READ_LAYOUT_CHAR_UUID   "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define CMD_ENTER_CONFIG        0x01
+#define CMD_EXIT_CONFIG         0x02
+#define CMD_COMMIT              0x03
 
 #define BATTERY_GAUGE_PIN 35
 #define LED_BATTERY_PIN_L 22
@@ -106,6 +66,28 @@
 #define LEDS_DURATION_MS 300
 #define BATTERY_UPDATE_INTERVAL_MS 60000
 
+// Pairing combo: top 3 keys of the leftmost column (rows 0-2, col 0).
+// Hold all 3 with the left hand; right hand stays free for the mouse.
+// Keypresses from these keys are suppressed while the combo is active so
+// no HID output reaches the host regardless of what the keys are mapped to.
+#define PAIRING_COMBO_COL  0
+#define PAIRING_COMBO_SIZE 4
+const byte PAIRING_COMBO_ROWS[PAIRING_COMBO_SIZE] = {0, 1, 2, 3};
+
+// forward declarations (avoids ctags prototype-generation issues)
+void scan_switches();
+void process_keys();
+void press_key(byte row, byte col);
+void release_key(byte row, byte col);
+int  get_battery_percent();
+void turn_leds_on_for(int millisOn);
+void tick_battery_leds();
+void init_battery_optimisations();
+void init_ble_config_service();
+byte get_layout_code(byte row, byte col);
+void check_pairing_combo();
+bool is_pairing_combo_key(byte row, byte col);
+
 BleKeyboard keyboard("Изумруд", "Vesi", 100);
 
 const byte NUM_ROWS = 4;
@@ -114,8 +96,13 @@ const byte NUM_LAYOUT_LEVELS = 2;
 byte layout_level = 0;
 
 bool ledsOn = false;
+bool ledsForcedOn = false;
 unsigned long ledsOnEndTime;
 unsigned long lastBatteryUpdateTime = 0;
+
+bool pairing_allowed = false;
+bool config_mode = false;
+uint8_t incoming_buffer[LAYOUT_BYTES];
 
 // PCB v3 - working pins
 byte row_pins[NUM_ROWS] = {15, 23, 4, 16};
@@ -123,18 +110,22 @@ byte col_pins[NUM_COLS] = {32, 33, 25, 26, 27, 14, 12, 13, 19, 18, 5, 17};
 
 byte layout[NUM_LAYOUT_LEVELS][NUM_ROWS][NUM_COLS] = {
   {
-    {K_TAB, KEY_Q, KEY_W, KEY_F, KEY_P, KEY_B, KEY_J, KEY_L, KEY_U, KEY_Y, K_MIN, K_BKS},
-    {K_ESC, KEY_A, KEY_R, KEY_S, KEY_T, KEY_G, KEY_K, KEY_N, KEY_E, KEY_I, KEY_O, K_ETR},
-    {K_S_L, KEY_Z, KEY_X, KEY_C, KEY_V, KEY_D, KEY_M, KEY_H, K_CMA, K_DOT, K_DQO, K_S_R},
-    {K_C_L, K_CSB, K_G_L, K_A_L, HIGHR, K_SPC, K_SCL, K_OCB, K_OPR, K_OSB, K_EQU, K_FSL}
+    {K_TAB, 0x71, 0x77, 0x66, 0x70, 0x62, 0x6A, 0x6C, 0x75, 0x79, 0x2D, K_BKS},
+    {K_ESC, 0x61, 0x72, 0x73, 0x74, 0x67, 0x6B, 0x6E, 0x65, 0x69, 0x6F, K_ETR},
+    {K_S_L, 0x7A, 0x78, 0x63, 0x76, 0x64, 0x6D, 0x68, 0x2C, 0x2E, 0x22, K_S_R},
+    {K_C_L, 0x5D, K_G_L, K_A_L, HIGHR, 0x20, 0x3B, 0x7B, 0x28, 0x5B, 0x3D, 0x2F}
   },
   {
-    {K_BTK, K_INS, K_DEL, K_HOM, K_END, K_PUP, K_PDN, KEY_7, KEY_8, KEY_9, K_BSL, K_BKS},
-    {K_ESC, K_BTK, K_F04, K_F05, K_F06, K_NON, K_NON, KEY_4, KEY_5, KEY_6, K_SQO, K_ETR},
-    {K_S_L, K_NON, K_NON, K_NON, BATLV, K_NON, K_NON, KEY_1, KEY_2, KEY_3, K_AUP, K_S_R},
-    {K_C_L, K_NON, K_G_L, K_A_L, HIGHR, K_SPC, CTALD, K_CPS, KEY_0, K_LFT, K_DWN, K_RHT}
+    {0x60, K_INS, K_DEL, K_HOM, K_END, K_PUP, K_PDN, 0x37, 0x38, 0x39, 0x5C, K_BKS},
+    {K_ESC, 0x60, K_F04, K_F05, K_F06, K_NON, K_NON, 0x34, 0x35, 0x36, 0x27, K_ETR},
+    {K_S_L, K_NON, K_NON, K_NON, BATLV, K_NON, K_NON, 0x31, 0x32, 0x33, K_AUP, K_S_R},
+    {K_C_L, K_NON, K_G_L, K_A_L, HIGHR, 0x20, CTALD, K_CPS, 0x30, K_LFT, K_DWN, K_RHT}
   }
 };
+
+// layout_mod[level][row][col] = modifier keycode to hold while pressing the key
+// 0x00 = no modifier; 0x80-0x87 = K_C_L/K_S_L/K_A_L/K_G_L/K_C_R/K_S_R/K_A_R/K_G_R
+byte layout_mod[NUM_LAYOUT_LEVELS][NUM_ROWS][NUM_COLS] = {};
 
 bool pressed_switches[NUM_ROWS][NUM_COLS] = {
   {false, false, false, false, false, false, false, false, false, false, false, false},
@@ -156,6 +147,8 @@ void setup() {
   pinMode(LED_BATTERY_PIN_R, OUTPUT);
   init_battery_optimisations();
   keyboard.begin();
+  load_layout_from_nvs();
+  init_ble_config_service();
   get_battery_percent();
   lastBatteryUpdateTime = millis();
   Serial.begin(9600);
@@ -166,7 +159,8 @@ void setup() {
 
 void loop() {
   scan_switches();
-  if (keyboard.isConnected()) {
+  check_pairing_combo();
+  if (!config_mode && keyboard.isConnected()) {
     process_keys();
     if (millis() - lastBatteryUpdateTime >= BATTERY_UPDATE_INTERVAL_MS) {
       get_battery_percent();
@@ -181,7 +175,7 @@ void loop() {
 int get_battery_percent() {
   float batteryInput = analogRead(BATTERY_GAUGE_PIN);
   float input_voltage = (batteryInput * 4.2) / 4095.0;
-  int input_voltage_millivolts = input_voltage * 1000;  
+  int input_voltage_millivolts = input_voltage * 1000;
   int battery_percentage = round(map(input_voltage_millivolts, 3300, 4200, 0, 100));
   //Serial.println((String)"bat input: " + batteryInput + (String)"; battery voltage [0-4.2V]: " + input_voltage + (String)"; % [0-100]: " + battery_percentage);
   keyboard.setBatteryLevel(battery_percentage);
@@ -197,11 +191,42 @@ void turn_leds_on_for(int millisOn) {
 }
 
 void tick_battery_leds() {
+  if (ledsForcedOn) return;
   if (ledsOn && (ledsOnEndTime < millis())) {
     digitalWrite(LED_BATTERY_PIN_L, LOW);
     digitalWrite(LED_BATTERY_PIN_R, LOW);
     ledsOn = false;
   }
+}
+
+bool is_pairing_combo_key(byte row, byte col) {
+  if (col != PAIRING_COMBO_COL) return false;
+  for (byte i = 0; i < PAIRING_COMBO_SIZE; i++)
+    if (PAIRING_COMBO_ROWS[i] == row) return true;
+  return false;
+}
+
+// Hold all 4 keys of the leftmost column simultaneously to open pairing.
+// LEDs stay on while the combo is held as a visual indicator.
+// Keypresses from the combo keys are suppressed in process_keys() while
+// pairing_allowed is true, so nothing reaches the host.
+void check_pairing_combo() {
+  bool combo = true;
+  for (byte i = 0; i < PAIRING_COMBO_SIZE; i++)
+    if (!pressed_switches[PAIRING_COMBO_ROWS[i]][PAIRING_COMBO_COL]) { combo = false; break; }
+  if (combo == pairing_allowed) return;
+
+  pairing_allowed = combo;
+  if (pairing_allowed) {
+    keyboard.releaseAll();
+    memset(key_states, false, sizeof(key_states));
+  }
+  keyboard.set_pairing_mode(pairing_allowed);
+
+  ledsForcedOn = pairing_allowed;
+  digitalWrite(LED_BATTERY_PIN_L, pairing_allowed ? HIGH : LOW);
+  digitalWrite(LED_BATTERY_PIN_R, pairing_allowed ? HIGH : LOW);
+  ledsOn = false;
 }
 
 void scan_switches() {
@@ -235,6 +260,12 @@ void init_battery_optimisations() {
 void process_keys() {
   for (byte row = 0; row < NUM_ROWS; row++) {
     for (byte col = 0; col < NUM_COLS; col++) {
+      if (pairing_allowed && is_pairing_combo_key(row, col)) {
+        // Keep key_states in sync so combo keys don't generate spurious
+        // press/release events when the user slowly lets go of the combo.
+        key_states[row][col] = pressed_switches[row][col];
+        continue;
+      }
       bool is_pressed_state = pressed_switches[row][col];
       if (is_pressed_state) {
         if (!key_states[row][col]) {
@@ -251,11 +282,14 @@ void process_keys() {
 
 void press_key(byte row, byte col) {
   key_states[row][col] = true;
-  bool is_normal_key = get_layout_code(row, col) < FIRST_META_KEY;
+  byte keycode = get_layout_code(row, col);
+  byte mod = layout_mod[layout_level][row][col];
+  bool is_normal_key = keycode < FIRST_META_KEY;
   if (is_normal_key) {
-    keyboard.press(get_layout_code(row, col));
+    if (mod) keyboard.press(mod);
+    keyboard.press(keycode);
   } else {
-    switch (get_layout_code(row, col)) {
+    switch (keycode) {
       case HIGHR:
         keyboard.releaseAll();
         layout_level = 1;
@@ -276,11 +310,14 @@ void press_key(byte row, byte col) {
 
 void release_key(byte row, byte col) {
   key_states[row][col] = false;
-  bool is_normal_key = get_layout_code(row, col) < FIRST_META_KEY;
+  byte keycode = get_layout_code(row, col);
+  byte mod = layout_mod[layout_level][row][col];
+  bool is_normal_key = keycode < FIRST_META_KEY;
   if (is_normal_key) {
-    keyboard.release(get_layout_code(row, col));
+    keyboard.release(keycode);
+    if (mod) keyboard.release(mod);
   } else {
-    switch (get_layout_code(row, col)) {
+    switch (keycode) {
       case HIGHR:
         keyboard.releaseAll();
         layout_level = 0;
@@ -294,6 +331,66 @@ void release_key(byte row, byte col) {
         break;
     }
   }
+}
+
+class ReadLayoutCallback : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic* pChar) override {
+    uint8_t buf[LAYOUT_BYTES];
+    get_layout_bytes(buf);
+    pChar->setValue(buf, LAYOUT_BYTES);
+  }
+};
+
+class ControlCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pChar) override {
+    if (pChar->getLength() < 1) return;
+    uint8_t cmd = pChar->getData()[0];
+    switch (cmd) {
+      case CMD_ENTER_CONFIG:
+        config_mode = true;
+        keyboard.releaseAll();
+        break;
+      case CMD_EXIT_CONFIG:
+        config_mode = false;
+        break;
+      case CMD_COMMIT:
+        apply_and_save_layout(incoming_buffer);
+        config_mode = false;
+        break;
+    }
+  }
+};
+
+class DataCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pChar) override {
+    size_t len = pChar->getLength();
+    if (len < 3) return;
+    uint8_t* data = pChar->getData();
+    uint16_t offset = ((uint16_t)data[0] << 8) | data[1];
+    uint16_t data_len = len - 2;
+    if (offset + data_len > LAYOUT_BYTES) return;
+    memcpy(incoming_buffer + offset, data + 2, data_len);
+  }
+};
+
+void init_ble_config_service() {
+  BLEServer* pServer = keyboard.pServer;
+
+  BLEService* pConfigService = pServer->createService(CONFIG_SERVICE_UUID);
+
+  BLECharacteristic* pReadChar = pConfigService->createCharacteristic(
+    READ_LAYOUT_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
+  pReadChar->setCallbacks(new ReadLayoutCallback());
+
+  BLECharacteristic* pControlChar = pConfigService->createCharacteristic(
+    CONTROL_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pControlChar->setCallbacks(new ControlCallback());
+
+  BLECharacteristic* pDataChar = pConfigService->createCharacteristic(
+    DATA_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pDataChar->setCallbacks(new DataCallback());
+
+  pConfigService->start();
 }
 
 /*

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Key Remapper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- ── Header ──────────────────────────────────────────────── -->
+    <header id="app-header">
+      <div class="header-brand">
+        <span class="brand-name">Key Remapper</span>
+      </div>
+      <div id="header-device" class="header-device" hidden>
+        <span class="device-dot"></span>
+        <span id="device-name"></span>
+      </div>
+    </header>
+
+    <!-- ── Connect view ────────────────────────────────────────── -->
+    <div id="view-connect" class="view">
+
+      <div class="connect-card">
+
+        <div class="bt-icon" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="2" x2="12" y2="22" />
+            <polyline points="12,2 18,7 12,12" />
+            <polyline points="12,22 18,17 12,12" />
+          </svg>
+        </div>
+
+        <h2 class="connect-title">Connect your keyboard</h2>
+        <p class="connect-sub" id="connect-sub">Make sure the keyboard is powered on and in range.</p>
+
+        <div id="platform-tip" class="platform-tip" hidden></div>
+
+        <button id="btn-connect" class="btn-primary btn-connect-cta">
+          <span id="btn-connect-label">Connect via Bluetooth</span>
+          <span id="btn-connect-spinner" class="spinner" hidden></span>
+        </button>
+
+        <button id="pairing-toggle" class="text-btn" aria-expanded="false">
+          First time? How to pair
+          <span class="toggle-arrow" aria-hidden="true">▾</span>
+        </button>
+
+        <div id="pairing-instructions" class="pairing-instructions" hidden>
+          <ol class="pairing-steps">
+            <li>Turn on the keyboard</li>
+            <li>Hold <strong>all 4 keys on the left side</strong> simultaneously until the LEDs light up — the keyboard is now discoverable.</li>
+            <li>Pair with your keyboard, then release the keys</li>
+          </ol>
+          <!-- <p class="pairing-note">Already paired? Skip straight to Connect.</p> -->
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ── Keyboard view ───────────────────────────────────────── -->
+    <div id="view-keyboard" class="view" hidden>
+
+      <div class="keyboard-toolbar">
+        <div class="layer-tabs" id="layer-tabs">
+          <button class="layer-tab active" data-layer="0">Base layer</button>
+          <button class="layer-tab" data-layer="1">Numbers &amp; Nav</button>
+        </div>
+        <div class="toolbar-right">
+          <div class="preset-group">
+            <label for="preset-select">Preset</label>
+            <select id="preset-select"></select>
+          </div>
+          <button id="btn-disconnect" class="btn-ghost">Disconnect</button>
+        </div>
+      </div>
+
+      <div class="keyboard-scroll">
+        <div class="keyboard-wrapper">
+          <div id="keyboard-grid"></div>
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <span id="change-count" class="change-count" hidden></span>
+        <div class="save-bar-actions">
+          <button id="btn-reset" class="btn-ghost" hidden>Reset</button>
+          <button id="btn-save" class="btn-primary" disabled>Save to keyboard</button>
+        </div>
+      </div>
+
+      <div id="save-progress" class="save-progress" hidden>
+        <div id="save-progress-bar" class="save-progress-fill"></div>
+      </div>
+
+    </div>
+
+    <!-- ── Toast ───────────────────────────────────────────────── -->
+    <div id="status-toast" class="status-toast" hidden></div>
+
+  </div>
+
+  <!-- ── Key picker modal ──────────────────────────────────────── -->
+  <div id="picker-overlay">
+    <div class="picker-modal">
+
+      <div class="picker-header">
+        <div class="picker-info">
+          <span id="picker-context" class="picker-context"></span>
+          <span id="picker-current-label" class="picker-current"></span>
+        </div>
+        <input id="picker-search" type="search" placeholder="Search keys…" autocomplete="off" />
+        <button id="picker-close" class="picker-close-btn" aria-label="Close">✕</button>
+      </div>
+
+      <div id="picker-groups"></div>
+
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+
+</body>
+</html>
