@@ -39,7 +39,7 @@ Open `webapp/index.html` in **Chrome or Edge** (Web Bluetooth required).
 
 1. **Power on** the keyboard.
 2. **Pair** *(first time or new device only)*
-   Hold the **top 3 keys of the leftmost column** simultaneously until the LEDs
+   Hold the **all 4 keys of the leftmost column** simultaneously until the LEDs
    light up. The keyboard is now discoverable. With your free hand, pair from
    your device's Bluetooth settings, then release the keys. The LEDs turn off
    and the keyboard locks back to bonded devices only.
@@ -73,7 +73,7 @@ as a starting point before customising and saving.
 ## Security — pairing gate
 
 By default the keyboard only allows connections from previously bonded devices.
-New devices can only pair while the **top 3 keys of the leftmost column are held** (LEDs on).
+New devices can only pair while the **all 4 keys of the leftmost column are held** (LEDs on).
 This prevents anyone nearby from silently pairing and remapping keys.
 
 The combo keys send no HID output while held, so there is no OS or browser

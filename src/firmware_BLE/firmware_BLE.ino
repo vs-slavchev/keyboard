@@ -71,8 +71,8 @@
 // Keypresses from these keys are suppressed while the combo is active so
 // no HID output reaches the host regardless of what the keys are mapped to.
 #define PAIRING_COMBO_COL  0
-#define PAIRING_COMBO_SIZE 3
-const byte PAIRING_COMBO_ROWS[PAIRING_COMBO_SIZE] = {0, 1, 2};
+#define PAIRING_COMBO_SIZE 4
+const byte PAIRING_COMBO_ROWS[PAIRING_COMBO_SIZE] = {0, 1, 2, 3};
 
 // forward declarations (avoids ctags prototype-generation issues)
 void scan_switches();
@@ -206,7 +206,7 @@ bool is_pairing_combo_key(byte row, byte col) {
   return false;
 }
 
-// Hold the top 3 keys of the leftmost column simultaneously to open pairing.
+// Hold all 4 keys of the leftmost column simultaneously to open pairing.
 // LEDs stay on while the combo is held as a visual indicator.
 // Keypresses from the combo keys are suppressed in process_keys() while
 // pairing_allowed is true, so nothing reaches the host.
