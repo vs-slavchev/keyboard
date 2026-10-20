@@ -11,15 +11,11 @@
 //   modmask              one modifier keycode held with the key
 //                        (0x81 Shift L, 0x86 Alt R = AltGr, ...)
 
-import { KEYS, getLabel, getKeysByGroup } from './keycodes.js';
+import { getLabel, getKeysByGroup } from './keycodes.js';
 
 const RAW_BASE   = 0x88;
 const MOD_SHIFT  = 0x81;
 const MOD_ALTGR  = 0x86;
-const MOD_NAMES  = {
-  0x80: 'Ctrl', 0x81: 'Shift', 0x82: 'Alt', 0x83: 'GUI',
-  0x84: 'Ctrl', 0x85: 'Shift', 0x86: 'AltGr', 0x87: 'GUI',
-};
 
 // Physical key (KeyboardEvent.code name) → HID usage ID
 const HID = {
@@ -129,13 +125,12 @@ const LEVEL_MODS = ['', 'Shift', 'AltGr'];
 // Expand each definition into a list of { phys, hid, level, char, dead } entries
 // and a lookup from "hid:level" to entry.
 function buildLayout(def) {
-  const keys = {};
+  const keys = { Space: [' ', ' '] };
   for (let i = 0; i < 26; i++) {
     const c = String.fromCharCode(97 + i);
     keys['Key' + c.toUpperCase()] = [c, c.toUpperCase()];
   }
   Object.assign(keys, def.keys);
-  keys.Space = [' ', ' '];
 
   const dead    = new Set(def.dead.map(([k, lvl]) => `${k}:${lvl}`));
   const entries = [];
@@ -186,8 +181,8 @@ function decodeKey(code, modmask) {
     if (level !== 0) return null;
     level = 2;
   } else if (modmask) {
-    otherMod = MOD_NAMES[modmask] || null;
-    if (!otherMod) return null;
+    if (modmask < 0x80 || modmask > 0x87) return null;
+    otherMod = getLabel(modmask, 0).split(' ')[0];
   }
   return { hid, level, otherMod };
 }
@@ -199,9 +194,6 @@ function charLabel(char) {
 
 // Label for a stored key as it types on the given computer layout.
 export function displayLabel(code, modmask, layoutId) {
-  if (layoutId === 'us' && KEYS.some(k => k.code === code && k.modmask === modmask))
-    return getLabel(code, modmask);
-
   const layout = OS_LAYOUTS[layoutId] || OS_LAYOUTS.us;
   const key    = decodeKey(code, modmask);
   if (!key) return getLabel(code, modmask);
@@ -249,7 +241,7 @@ export function getLayoutKeysByGroup(layoutId) {
 
   const letters = [], digits = [], symbols = [];
   for (const e of seen.values()) {
-    const ascii = e.level < 2 ? KEY_TO_ASCII.get(`${e.hid}:${e.level}`) : undefined;
+    const ascii = KEY_TO_ASCII.get(`${e.hid}:${e.level}`);
     const key = ascii !== undefined
       ? { code: ascii, modmask: 0 }
       : { code: RAW_BASE + e.hid, modmask: [0, MOD_SHIFT, MOD_ALTGR][e.level] };
@@ -261,7 +253,6 @@ export function getLayoutKeysByGroup(layoutId) {
   }
   letters.sort((a, b) => a.label.localeCompare(b.label));
   digits.sort((a, b) => a.label.localeCompare(b.label));
-  symbols.sort((a, b) => (b.label === 'Space') - (a.label === 'Space'));
 
   groups.Letters = letters;
   groups.Digits  = digits;

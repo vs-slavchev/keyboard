@@ -489,17 +489,15 @@ async function initOsLayoutSelector() {
   }
 
   const detected = await detectLayout();
-  autoOpt.textContent = detected
-    ? `Auto (${OS_LAYOUTS[detected].name})`
-    : `Auto (${OS_LAYOUTS.us.name})`;
+  const resolve  = v => v === 'auto' ? (detected || 'us') : v;
+  autoOpt.textContent = `Auto (${OS_LAYOUTS[detected || 'us'].name})`;
 
-  const choice = loadOsLayoutChoice();
-  sel.value = choice;
-  setOsLayout(choice === 'auto' ? (detected || 'us') : choice);
+  sel.value = loadOsLayoutChoice();
+  setOsLayout(resolve(sel.value));
 
   sel.addEventListener('change', () => {
     saveOsLayoutChoice(sel.value);
-    setOsLayout(sel.value === 'auto' ? (detected || 'us') : sel.value);
+    setOsLayout(resolve(sel.value));
   });
 }
 
