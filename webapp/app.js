@@ -1,5 +1,6 @@
-import { KEYS, GROUP_ORDER, getLabel, getKeysByGroup } from './keycodes.js';
+import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
+import { OS_LAYOUTS, displayLabel, getLayoutKeysByGroup, unavailableChars, detectLayout } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -19,6 +20,7 @@ let bleDevice    = null;
 let controlChar  = null;
 let dataChar     = null;
 let currentLayer = 0;
+let osLayout     = 'us';   // computer layout used for labels and the picker
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -303,7 +305,7 @@ function renderGrid() {
       if (!keyEqual(layout[l][r][c], savedLayout[l][r][c]))
         cell.classList.add('modified');
 
-      const keyLabel = getLabel(code, modmask);
+      const keyLabel = displayLabel(code, modmask, osLayout);
       cell.textContent = keyLabel;
       if (keyLabel.length > 5) cell.classList.add('long-label');
 
@@ -349,7 +351,7 @@ function initPresetSelector() {
 const LAYER_SHORT = ['Base', 'Num/Nav'];
 
 function buildPicker(filter = '') {
-  const groups    = getKeysByGroup();
+  const groups    = getLayoutKeysByGroup(osLayout);
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
@@ -380,6 +382,7 @@ function buildPicker(filter = '') {
       btn.textContent     = key.label;
       btn.dataset.code    = key.code;
       btn.dataset.modmask = key.modmask;
+      if (key.title) btn.title = key.title;
 
       if (selectedCell) {
         const [curCode, curMod] = layout[selectedCell.layer][selectedCell.row][selectedCell.col];
@@ -392,6 +395,17 @@ function buildPicker(filter = '') {
     }
 
     section.appendChild(keysEl);
+
+    if (groupName === 'Symbols' && !q) {
+      const missing = unavailableChars(osLayout);
+      if (missing.length) {
+        const note = document.createElement('p');
+        note.className   = 'picker-note';
+        note.textContent = `Not typeable on ${OS_LAYOUTS[osLayout].name}: ${missing.join(' ')}`;
+        section.appendChild(note);
+      }
+    }
+
     container.appendChild(section);
   }
 
@@ -411,7 +425,7 @@ function openPicker(layer, row, col) {
   renderGrid();
 
   const [code, modmask] = layout[layer][row][col];
-  const keyLabel        = getLabel(code, modmask);
+  const keyLabel        = displayLabel(code, modmask, osLayout);
 
   document.getElementById('picker-context').textContent =
     `${LAYER_SHORT[layer]} — Row ${row + 1}, Col ${col + 1}`;
@@ -436,6 +450,57 @@ function assignKey(code, modmask) {
   if (!selectedCell) return;
   layout[selectedCell.layer][selectedCell.row][selectedCell.col] = [code, modmask];
   closePicker();
+}
+
+// ── Computer layout selector ───────────────────────────────────────────────────
+const OS_LAYOUT_STORAGE_KEY = 'osLayout';
+
+function loadOsLayoutChoice() {
+  try {
+    const v = localStorage.getItem(OS_LAYOUT_STORAGE_KEY);
+    if (v === 'auto' || OS_LAYOUTS[v]) return v;
+  } catch (_) {}
+  return 'auto';
+}
+
+function saveOsLayoutChoice(v) {
+  try { localStorage.setItem(OS_LAYOUT_STORAGE_KEY, v); } catch (_) {}
+}
+
+function setOsLayout(id) {
+  osLayout = id;
+  renderGrid();
+  if (document.getElementById('picker-overlay').classList.contains('open'))
+    buildPicker(document.getElementById('picker-search').value);
+}
+
+async function initOsLayoutSelector() {
+  const sel = document.getElementById('os-layout-select');
+
+  const autoOpt = document.createElement('option');
+  autoOpt.value       = 'auto';
+  autoOpt.textContent = 'Auto';
+  sel.appendChild(autoOpt);
+  for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
+    const opt = document.createElement('option');
+    opt.value       = id;
+    opt.textContent = layout.name;
+    sel.appendChild(opt);
+  }
+
+  const detected = await detectLayout();
+  autoOpt.textContent = detected
+    ? `Auto (${OS_LAYOUTS[detected].name})`
+    : `Auto (${OS_LAYOUTS.us.name})`;
+
+  const choice = loadOsLayoutChoice();
+  sel.value = choice;
+  setOsLayout(choice === 'auto' ? (detected || 'us') : choice);
+
+  sel.addEventListener('change', () => {
+    saveOsLayoutChoice(sel.value);
+    setOsLayout(sel.value === 'auto' ? (detected || 'us') : sel.value);
+  });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -466,6 +531,7 @@ function init() {
   });
 
   initPresetSelector();
+  initOsLayoutSelector();
 
   const pairingToggle = document.getElementById('pairing-toggle');
   const pairingPanel  = document.getElementById('pairing-instructions');
