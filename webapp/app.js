@@ -489,9 +489,10 @@ function loadOsLayoutChoice() {
   return v === 'auto' || Object.hasOwn(OS_LAYOUTS, v) ? v : 'auto';
 }
 
-// Manual ISO checkbox setting: true / false, or null when never set
+// Mac keyboard type setting: true (ISO) / false (ANSI) / null (auto-detect).
+// Older versions stored '1' / '0'.
 const isoPref       = loadPref(MAC_ISO_STORAGE_KEY);
-let macIsoOverride  = isoPref === '1' ? true : isoPref === '0' ? false : null;
+let macIsoOverride  = ['iso', '1'].includes(isoPref) ? true : ['ansi', '0'].includes(isoPref) ? false : null;
 
 function macIso() {
   return macIsoOverride ?? detected?.iso ?? false;
@@ -518,20 +519,28 @@ function updateLayoutControls() {
   opt.textContent = detected
     ? `Auto (${OS_LAYOUTS[detected.id].name})`
     : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
-  document.getElementById('os-layout-iso').checked = macIso();
+
+  const isoSel = document.getElementById('os-layout-iso');
+  const found  = detected?.iso;
+  isoSel.options[0].textContent = found == null ? 'Auto (unknown – ANSI)' : `Auto (${found ? 'ISO' : 'ANSI'})`;
+  isoSel.value = macIsoOverride == null ? 'auto' : macIsoOverride ? 'iso' : 'ansi';
 }
 
 // Re-run detection and follow it when "Auto" is selected. Concurrent callers
 // share the in-flight run, so a stale result can't land after a newer one.
+// A failed check keeps the previous result. Resolves to whether it succeeded.
 let detecting = null;
 
 function redetectOsLayout() {
-  detecting ??= detectLayout(OS_PLATFORM).then(result => {
-    detecting = null;
-    detected  = result;
-    updateLayoutControls();
-    setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
-  });
+  detecting ??= detectLayout(OS_PLATFORM)
+    .then(result => {
+      detected = result;
+      updateLayoutControls();
+      setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => { detecting = null; });
   return detecting;
 }
 
@@ -574,8 +583,9 @@ function initOsLayoutSelector() {
   });
 
   document.getElementById('os-layout-iso').addEventListener('change', e => {
-    macIsoOverride = e.target.checked;
-    savePref(MAC_ISO_STORAGE_KEY, macIsoOverride ? '1' : '0');
+    const v = e.target.value;
+    macIsoOverride = v === 'auto' ? null : v === 'iso';
+    savePref(MAC_ISO_STORAGE_KEY, v);
     setOsLayout(resolveOsLayout(sel.value));
   });
 
@@ -584,9 +594,15 @@ function initOsLayoutSelector() {
     detectBtn.hidden = true;
     return;
   }
+  // The button means "detect automatically": it switches a manual choice to Auto
   detectBtn.addEventListener('click', async () => {
-    await redetectOsLayout();
-    showToast(detected
+    if (sel.value !== 'auto') {
+      sel.value = 'auto';
+      savePref(OS_LAYOUT_STORAGE_KEY, 'auto');
+    }
+    const ok = await redetectOsLayout();
+    setOsLayout(resolveOsLayout(sel.value));
+    showToast(ok && detected
       ? `Detected ${OS_LAYOUTS[detected.id].name}`
       : 'Could not detect the computer layout', 'info', 2000);
   });

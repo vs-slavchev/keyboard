@@ -405,39 +405,37 @@ function buildNotes(layout) {
 // considering only layouts for the given platform ('pc' or 'mac').
 // Returns { id, iso } — iso is true/false when the Mac ISO key swap could be
 // told from the map, else null — or null when not confidently matched.
+// Rejects if the browser fails to report the layout, so callers can keep
+// their previous result instead of treating a failed check as "no match".
 // Layouts whose unshifted keys are identical (US/UK Mac) are told apart by the
 // browser's language region; if that doesn't settle it, nothing is guessed.
 export async function detectLayout(platform) {
-  try {
-    if (!navigator.keyboard?.getLayoutMap) return null;
-    const map = await navigator.keyboard.getLayoutMap();
-    const swapKeys = platform === 'mac' ? ISO_SWAP : {};
-    let best = [], bestScore = 0;
-    for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
-      if (layout.platform !== platform) continue;
-      let total = 0, hits = 0;
-      for (const e of layout.entries) {
-        if (e.level !== 0 || swapKeys[e.phys] || !map.has(e.phys)) continue;
-        total++;
-        if (map.get(e.phys).toLowerCase() === e.char.toLowerCase()) hits++;
-      }
-      const score = total ? hits / total : 0;
-      if (score > bestScore) { best = [id]; bestScore = score; }
-      else if (score === bestScore) best.push(id);
+  if (!navigator.keyboard?.getLayoutMap) return null;
+  const map = await navigator.keyboard.getLayoutMap();
+  const swapKeys = platform === 'mac' ? ISO_SWAP : {};
+  let best = [], bestScore = 0;
+  for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
+    if (layout.platform !== platform) continue;
+    let total = 0, hits = 0;
+    for (const e of layout.entries) {
+      if (e.level !== 0 || swapKeys[e.phys] || !map.has(e.phys)) continue;
+      total++;
+      if (map.get(e.phys).toLowerCase() === e.char.toLowerCase()) hits++;
     }
-    if (bestScore < 0.9) return null;
-
-    let id = best[0];
-    if (best.length > 1) {
-      const regions = (navigator.languages ?? []).map(localeRegion);
-      id = best.find(b => OS_LAYOUTS[b].regions.some(r => regions.includes(r)));
-      if (!id) return null;
-    }
-
-    return { id, iso: detectIso(OS_LAYOUTS[id], map.get('Backquote')) };
-  } catch (_) {
-    return null;
+    const score = total ? hits / total : 0;
+    if (score > bestScore) { best = [id]; bestScore = score; }
+    else if (score === bestScore) best.push(id);
   }
+  if (bestScore < 0.9) return null;
+
+  let id = best[0];
+  if (best.length > 1) {
+    const regions = (navigator.languages ?? []).map(localeRegion);
+    id = best.find(b => OS_LAYOUTS[b].regions.some(r => regions.includes(r)));
+    if (!id) return null;
+  }
+
+  return { id, iso: detectIso(OS_LAYOUTS[id], map.get('Backquote')) };
 }
 
 function localeRegion(tag) {

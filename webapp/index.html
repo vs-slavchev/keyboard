@@ -79,12 +79,17 @@
           <div class="preset-group os-layout-group" title="Your computer's keyboard layout. Key labels show what each key types with it.">
             <label for="os-layout-select">Computer layout</label>
             <select id="os-layout-select"></select>
-            <label id="os-iso-toggle" class="os-iso-toggle" hidden
-                   title="Turn on if macOS Keyboard Type is ISO (the keys left of 1 and left of Z are swapped)">
-              <input type="checkbox" id="os-layout-iso" /> ISO
-            </label>
+            <span id="os-iso-toggle" class="os-iso-toggle" hidden
+                  title="macOS Keyboard Type. ISO swaps the keys left of 1 and left of Z.">
+              <label for="os-layout-iso">Keyboard type</label>
+              <select id="os-layout-iso">
+                <option value="auto">Auto</option>
+                <option value="iso">ISO</option>
+                <option value="ansi">ANSI</option>
+              </select>
+            </span>
             <button id="os-layout-detect" class="text-btn os-layout-detect" type="button"
-                    title="Re-detect layout" aria-label="Re-detect computer layout">↻</button>
+                    title="Detect layout automatically" aria-label="Detect computer layout automatically">↻</button>
           </div>
           <div class="preset-group">
             <label for="preset-select">Preset</label>
