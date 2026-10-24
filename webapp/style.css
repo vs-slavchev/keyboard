@@ -396,6 +396,17 @@ select:hover, select:focus { border-color: var(--text-dim); }
   color: var(--text);
 }
 
+.os-iso-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.os-iso-toggle[hidden] { display: none; }
+
+.os-iso-toggle input { margin: 0; cursor: pointer; }
+
 .os-layout-detect {
   color: var(--text-xdim);
   font-size: 0.9rem;

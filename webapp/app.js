@@ -22,6 +22,7 @@ let dataChar     = null;
 let currentLayer = 0;
 let osLayout     = 'us';   // computer layout used for labels and the picker
 let detectedOsLayout = null; // last auto-detection result (null = not detected)
+let detectedMacIso   = null; // whether detection saw the macOS ISO key swap
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -472,12 +473,13 @@ function assignKey(code, modmask) {
 
 // ── Computer layout selector ───────────────────────────────────────────────────
 const OS_LAYOUT_STORAGE_KEY = 'osLayout';
+const MAC_ISO_STORAGE_KEY   = 'osLayoutMacIso';
 const PLATFORM_NAMES        = { pc: 'Windows / Linux', mac: 'macOS' };
 
 function loadOsLayoutChoice() {
   try {
     const v = localStorage.getItem(OS_LAYOUT_STORAGE_KEY);
-    if (v === 'auto' || Object.hasOwn(OS_LAYOUTS, v)) return v;
+    if (v === 'auto' || (Object.hasOwn(OS_LAYOUTS, v) && !OS_LAYOUTS[v].hidden)) return v;
   } catch (_) {}
   return 'auto';
 }
@@ -486,11 +488,30 @@ function saveOsLayoutChoice(v) {
   try { localStorage.setItem(OS_LAYOUT_STORAGE_KEY, v); } catch (_) {}
 }
 
+// Manual ISO checkbox setting: true / false, or null when never set
+function loadMacIsoOverride() {
+  try {
+    const v = localStorage.getItem(MAC_ISO_STORAGE_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  } catch (_) {}
+  return null;
+}
+
+function saveMacIsoOverride(on) {
+  try { localStorage.setItem(MAC_ISO_STORAGE_KEY, on ? '1' : '0'); } catch (_) {}
+}
+
+function macIso() {
+  return loadMacIsoOverride() ?? detectedMacIso ?? false;
+}
+
 function resolveOsLayout(choice) {
-  return choice === 'auto' ? (detectedOsLayout || FALLBACK_LAYOUT) : choice;
+  const id = choice === 'auto' ? (detectedOsLayout || FALLBACK_LAYOUT) : choice;
+  return OS_LAYOUTS[id].platform === 'mac' && macIso() ? `${id}-iso` : id;
 }
 
 function setOsLayout(id) {
+  document.getElementById('os-iso-toggle').hidden = OS_LAYOUTS[id].platform !== 'mac';
   if (id === osLayout) return;
   osLayout = id;
   renderGrid();
@@ -500,11 +521,12 @@ function setOsLayout(id) {
   }
 }
 
-function updateAutoOption() {
+function updateLayoutControls() {
   const opt = document.querySelector('#os-layout-select option[value="auto"]');
   opt.textContent = detectedOsLayout
     ? `Auto (${OS_LAYOUTS[detectedOsLayout].name})`
     : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
+  document.getElementById('os-layout-iso').checked = macIso();
 }
 
 // Re-run detection and follow it when "Auto" is selected. Concurrent callers
@@ -512,10 +534,11 @@ function updateAutoOption() {
 let detecting = null;
 
 function redetectOsLayout() {
-  detecting ??= detectLayout(OS_PLATFORM).then(id => {
+  detecting ??= detectLayout(OS_PLATFORM).then(result => {
     detecting = null;
-    detectedOsLayout = id;
-    updateAutoOption();
+    detectedOsLayout = result?.id ?? null;
+    detectedMacIso   = result?.iso ?? null;
+    updateLayoutControls();
     setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
   });
   return detecting;
@@ -540,7 +563,7 @@ function initOsLayoutSelector() {
     const group = document.createElement('optgroup');
     group.label = PLATFORM_NAMES[platform];
     for (const [id, l] of Object.entries(OS_LAYOUTS)) {
-      if (l.platform !== platform) continue;
+      if (l.platform !== platform || l.hidden) continue;
       const opt = document.createElement('option');
       opt.value       = id;
       opt.textContent = l.name;
@@ -550,13 +573,18 @@ function initOsLayoutSelector() {
   }
 
   sel.value = loadOsLayoutChoice();
-  updateAutoOption();
+  updateLayoutControls();
   setOsLayout(resolveOsLayout(sel.value));
 
   sel.addEventListener('change', () => {
     saveOsLayoutChoice(sel.value);
     setOsLayout(resolveOsLayout(sel.value));
     autoRedetectOsLayout();
+  });
+
+  document.getElementById('os-layout-iso').addEventListener('change', e => {
+    saveMacIsoOverride(e.target.checked);
+    setOsLayout(resolveOsLayout(sel.value));
   });
 
   const detectBtn = document.getElementById('os-layout-detect');

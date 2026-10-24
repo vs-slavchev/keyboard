@@ -11,9 +11,10 @@
 //   modmask              one modifier keycode held with the key
 //                        (0x81 Shift L, 0x86 Alt R = AltGr / Option, ...)
 //
-// Mac tables use Chrome's KeyboardEvent.code names on macOS, where Backquote
-// is the ANSI grave key and IntlBackslash the ISO section key — the same names
-// getLayoutMap() reports, so detection and tables agree.
+// Mac tables are written for macOS Keyboard Type = ANSI: HID 0x35 (Backquote)
+// types the grave-position character and HID 0x64 (IntlBackslash) the section
+// character. With Keyboard Type = ISO macOS swaps those two keys, so every Mac
+// layout also gets a hidden "<id>-iso" variant with them swapped.
 
 import { getLabel, getKeysByGroup } from './keycodes.js';
 
@@ -56,10 +57,11 @@ Object.assign(BASE_KEYS, {
 // Mac tables only list single-Option characters; Shift+Option ones can't be
 // sent with one modifier and show up as "not typeable".
 const LAYOUT_DEFS = {
-  us: { name: 'English (US)', platform: 'pc', keys: {} },
+  us: { name: 'English (US)', platform: 'pc', regions: ['US'], keys: {} },
   gb: {
     name: 'English (UK)',
     platform: 'pc',
+    regions: ['GB', 'IE'],
     keys: {
       Backquote: ['`', '¬', '¦'], Digit2: ['2', '"'], Digit3: ['3', '£'], Digit4: ['4', '$', '€'],
       Backslash: ['#', '~'], Quote: ["'", '@'],
@@ -134,11 +136,13 @@ const LAYOUT_DEFS = {
   'us-mac': {
     name: 'English (US, Mac)',
     platform: 'mac',
+    regions: ['US'],
     keys: { IntlBackslash: ['§', '±'] },
   },
   'gb-mac': {
     name: 'English (UK, Mac)',
     platform: 'mac',
+    regions: ['GB', 'IE'],
     keys: { Digit2: ['2', '@', '€'], Digit3: ['3', '£', '#'], IntlBackslash: ['§', '±'] },
   },
   'de-mac': {
@@ -179,9 +183,17 @@ const LAYOUT_DEFS = {
 
 // Expand each definition into a list of { phys, hid, level, char, dead } entries,
 // a lookup from "hid:level" to entry, and which modifiers select which level.
-function buildLayout(def) {
-  const keys    = { ...BASE_KEYS, ...def.keys };
-  const dead    = new Set((def.dead ?? []).map(([k, lvl]) => `${k}:${lvl}`));
+// `iso` swaps the two keys macOS exchanges for ISO keyboards.
+const ISO_SWAP = { Backquote: 'IntlBackslash', IntlBackslash: 'Backquote' };
+
+function buildLayout(def, iso = false) {
+  const keys = { ...BASE_KEYS, ...def.keys };
+  let deadKeys = def.dead ?? [];
+  if (iso) {
+    [keys.Backquote, keys.IntlBackslash] = [keys.IntlBackslash, keys.Backquote];
+    deadKeys = deadKeys.map(([k, lvl]) => [ISO_SWAP[k] ?? k, lvl]);
+  }
+  const dead    = new Set(deadKeys.map(([k, lvl]) => `${k}:${lvl}`));
   const entries = [];
   const byHid   = new Map();
   for (const [phys, chars] of Object.entries(keys)) {
@@ -202,6 +214,8 @@ function buildLayout(def) {
   return {
     name: def.name,
     platform: def.platform,
+    regions: def.regions ?? [],
+    hidden: iso,
     entries,
     byHid,
     modLevels,
@@ -210,7 +224,10 @@ function buildLayout(def) {
 }
 
 export const OS_LAYOUTS = {};
-for (const [id, def] of Object.entries(LAYOUT_DEFS)) OS_LAYOUTS[id] = buildLayout(def);
+for (const [id, def] of Object.entries(LAYOUT_DEFS)) {
+  OS_LAYOUTS[id] = buildLayout(def);
+  if (def.platform === 'mac') OS_LAYOUTS[`${id}-iso`] = buildLayout(def, true);
+}
 
 // ASCII code → { hid, level } (US layout), and the reverse.
 const ASCII_TO_KEY = new Map();
@@ -239,14 +256,31 @@ function decodeKey(code, modmask, layout) {
 
   let otherMod = null;
   const modLevel = layout.modLevels[modmask];
-  if (modLevel) {
-    if (level !== 0) return null;
+  if (modLevel && level === 0) {
     level = modLevel;
   } else if (modmask) {
-    if (modmask < 0x80 || modmask > 0x87) return null;
-    otherMod = getLabel(modmask, 0).split(' ')[0];
+    if (!isModifier(modmask)) return null;
+    otherMod = modName(modmask, layout);
   }
   return { hid, level, otherMod };
+}
+
+function isModifier(modmask) {
+  return modmask >= 0x80 && modmask <= 0x87;
+}
+
+// Name of a modifier as the layout uses it (Shift / AltGr / Option / Ctrl / ...)
+function modName(modmask, layout) {
+  const level = layout.modLevels[modmask];
+  return level ? layout.levelMods[level] : getLabel(modmask, 0).split(' ')[0];
+}
+
+// Label for keys with no character on the layout: the exact KEYS label if there
+// is one (Ctrl+F1), else the modifier plus the key's own name (Shift+Tab).
+function fallbackLabel(code, modmask, layout) {
+  const exact = getLabel(code, modmask);
+  if (!modmask || !isModifier(modmask) || !exact.startsWith('0x')) return exact;
+  return `${modName(modmask, layout)}+${getLabel(code, 0)}`;
 }
 
 // Letters show as capitals like the original key labels, so a typed capital
@@ -262,7 +296,7 @@ function charLabel(char) {
 export function keyInfo(code, modmask, layoutId) {
   const layout = OS_LAYOUTS[layoutId];
   const key    = decodeKey(code, modmask, layout);
-  if (!key) return { label: getLabel(code, modmask), dead: false };
+  if (!key) return { label: fallbackLabel(code, modmask, layout), dead: false };
 
   const prefix = key.otherMod ? `${key.otherMod}+` : '';
   const entry  = layout.byHid.get(`${key.hid}:${key.level}`);
@@ -272,7 +306,7 @@ export function keyInfo(code, modmask, layoutId) {
   const plain = layout.byHid.get(`${key.hid}:0`);
   if (plain && key.level)
     return { label: `${prefix}${layout.levelMods[key.level]}+${charLabel(plain.char)}`, dead: false };
-  return { label: getLabel(code, modmask), dead: false };
+  return { label: fallbackLabel(code, modmask, layout), dead: false };
 }
 
 function describeEntry(entry, layout) {
@@ -344,24 +378,46 @@ function buildNotes(layout) {
 
 // Guess the computer's layout from the browser (Chrome/Edge desktop only),
 // considering only layouts for the given platform ('pc' or 'mac').
-// Returns a layout id, or null when unavailable or not confidently matched.
+// Returns { id, iso } — iso is true/false when the Mac ISO key swap could be
+// told from the map, else null — or null when not confidently matched.
+// Layouts whose unshifted keys are identical (US/UK Mac) are told apart by the
+// browser's language region; if that doesn't settle it, nothing is guessed.
 export async function detectLayout(platform) {
   try {
     if (!navigator.keyboard?.getLayoutMap) return null;
     const map = await navigator.keyboard.getLayoutMap();
-    let best = null, bestScore = 0;
+    const swapKeys = platform === 'mac' ? ISO_SWAP : {};
+    let best = [], bestScore = 0;
     for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
-      if (layout.platform !== platform) continue;
+      if (layout.platform !== platform || layout.hidden) continue;
       let total = 0, hits = 0;
       for (const e of layout.entries) {
-        if (e.level !== 0 || !map.has(e.phys)) continue;
+        if (e.level !== 0 || swapKeys[e.phys] || !map.has(e.phys)) continue;
         total++;
         if (map.get(e.phys).toLowerCase() === e.char.toLowerCase()) hits++;
       }
       const score = total ? hits / total : 0;
-      if (score > bestScore) { best = id; bestScore = score; }
+      if (score > bestScore) { best = [id]; bestScore = score; }
+      else if (score === bestScore) best.push(id);
     }
-    return bestScore >= 0.9 ? best : null;
+    if (bestScore < 0.9) return null;
+
+    let id = best[0];
+    if (best.length > 1) {
+      const regions = (navigator.languages ?? []).map(l => l.split('-')[1]?.toUpperCase());
+      id = best.find(b => OS_LAYOUTS[b].regions.some(r => regions.includes(r)));
+      if (!id) return null;
+    }
+
+    let iso = null;
+    if (platform === 'mac') {
+      const ansi = OS_LAYOUTS[id].byHid;
+      const bq   = map.get('Backquote');
+      const grave   = ansi.get(`${HID.Backquote}:0`)?.char;
+      const section = ansi.get(`${HID.IntlBackslash}:0`)?.char;
+      if (bq && grave !== section) iso = bq === section ? true : bq === grave ? false : null;
+    }
+    return { id, iso };
   } catch (_) {
     return null;
   }
