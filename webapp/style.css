@@ -403,8 +403,6 @@ select:hover, select:focus { border-color: var(--text-dim); }
   cursor: pointer;
 }
 
-.os-iso-toggle[hidden] { display: none; }
-
 .os-iso-toggle input { margin: 0; cursor: pointer; }
 
 .os-layout-detect {

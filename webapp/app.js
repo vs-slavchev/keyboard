@@ -1,6 +1,6 @@
 import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
-import { OS_LAYOUTS, keyInfo, detectLayout } from './os-layouts.js';
+import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -20,9 +20,8 @@ let bleDevice    = null;
 let controlChar  = null;
 let dataChar     = null;
 let currentLayer = 0;
-let osLayout     = 'us';   // computer layout used for labels and the picker
-let detectedOsLayout = null; // last auto-detection result (null = not detected)
-let detectedMacIso   = null; // whether detection saw the macOS ISO key swap
+let osLayout     = OS_LAYOUTS.us;   // computer layout used for labels and the picker
+let detected     = null;   // last auto-detection result { id, iso }, null = not detected
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -356,13 +355,8 @@ function initPresetSelector() {
 // ── Key picker ────────────────────────────────────────────────────────────────
 const LAYER_SHORT = ['Base', 'Num/Nav'];
 
-// Case- and accent-insensitive search text ("e" matches "É")
-function foldSearch(s) {
-  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-}
-
 function buildPicker(filter = '') {
-  const groups    = OS_LAYOUTS[osLayout].groups;
+  const groups    = osLayout.groups;
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
@@ -371,7 +365,7 @@ function buildPicker(filter = '') {
 
   for (const groupName of GROUP_ORDER) {
     const keys = (groups[groupName] || []).filter(
-      k => !q || foldSearch(k.label).includes(q)
+      k => !q || k.search.includes(q)
     );
     if (keys.length === 0) continue;
     totalVisible += keys.length;
@@ -409,8 +403,8 @@ function buildPicker(filter = '') {
     section.appendChild(keysEl);
 
     if (groupName === 'Symbols' && !q) {
-      const { unavailable, dead } = OS_LAYOUTS[osLayout].notes;
-      const name = OS_LAYOUTS[osLayout].name;
+      const { unavailable, dead } = osLayout.notes;
+      const name = osLayout.name;
       if (dead.length)
         appendPickerNote(section, `Dead keys on ${name} (the character appears after the next key press): ${dead.join(' ')}`);
       if (unavailable.length)
@@ -481,44 +475,37 @@ const OS_LAYOUT_STORAGE_KEY = 'osLayout';
 const MAC_ISO_STORAGE_KEY   = 'osLayoutMacIso';
 const PLATFORM_NAMES        = { pc: 'Windows / Linux', mac: 'macOS' };
 
-function loadOsLayoutChoice() {
-  try {
-    const v = localStorage.getItem(OS_LAYOUT_STORAGE_KEY);
-    if (v === 'auto' || (Object.hasOwn(OS_LAYOUTS, v) && !OS_LAYOUTS[v].hidden)) return v;
-  } catch (_) {}
-  return 'auto';
+// localStorage can throw (privacy mode, blocked storage); treat that as unset
+function loadPref(key) {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
 }
 
-function saveOsLayoutChoice(v) {
-  try { localStorage.setItem(OS_LAYOUT_STORAGE_KEY, v); } catch (_) {}
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch (_) {}
+}
+
+function loadOsLayoutChoice() {
+  const v = loadPref(OS_LAYOUT_STORAGE_KEY);
+  return v === 'auto' || Object.hasOwn(OS_LAYOUTS, v) ? v : 'auto';
 }
 
 // Manual ISO checkbox setting: true / false, or null when never set
-function loadMacIsoOverride() {
-  try {
-    const v = localStorage.getItem(MAC_ISO_STORAGE_KEY);
-    if (v === '1' || v === '0') return v === '1';
-  } catch (_) {}
-  return null;
-}
-
-function saveMacIsoOverride(on) {
-  try { localStorage.setItem(MAC_ISO_STORAGE_KEY, on ? '1' : '0'); } catch (_) {}
-}
+const isoPref       = loadPref(MAC_ISO_STORAGE_KEY);
+let macIsoOverride  = isoPref === '1' ? true : isoPref === '0' ? false : null;
 
 function macIso() {
-  return loadMacIsoOverride() ?? detectedMacIso ?? false;
+  return macIsoOverride ?? detected?.iso ?? false;
 }
 
 function resolveOsLayout(choice) {
-  const id = choice === 'auto' ? (detectedOsLayout || FALLBACK_LAYOUT) : choice;
-  return OS_LAYOUTS[id].platform === 'mac' && macIso() ? `${id}-iso` : id;
+  const base = OS_LAYOUTS[choice === 'auto' ? (detected?.id || FALLBACK_LAYOUT) : choice];
+  return base.iso && macIso() ? base.iso : base;
 }
 
-function setOsLayout(id) {
-  document.getElementById('os-iso-toggle').hidden = OS_LAYOUTS[id].platform !== 'mac';
-  if (id === osLayout) return;
-  osLayout = id;
+function setOsLayout(layout) {
+  document.getElementById('os-iso-toggle').hidden = layout.platform !== 'mac';
+  if (layout === osLayout) return;
+  osLayout = layout;
   renderGrid();
   if (document.getElementById('picker-overlay').classList.contains('open')) {
     updatePickerHeader();
@@ -528,8 +515,8 @@ function setOsLayout(id) {
 
 function updateLayoutControls() {
   const opt = document.querySelector('#os-layout-select option[value="auto"]');
-  opt.textContent = detectedOsLayout
-    ? `Auto (${OS_LAYOUTS[detectedOsLayout].name})`
+  opt.textContent = detected
+    ? `Auto (${OS_LAYOUTS[detected.id].name})`
     : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
   document.getElementById('os-layout-iso').checked = macIso();
 }
@@ -541,8 +528,7 @@ let detecting = null;
 function redetectOsLayout() {
   detecting ??= detectLayout(OS_PLATFORM).then(result => {
     detecting = null;
-    detectedOsLayout = result?.id ?? null;
-    detectedMacIso   = result?.iso ?? null;
+    detected  = result;
     updateLayoutControls();
     setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
   });
@@ -568,7 +554,7 @@ function initOsLayoutSelector() {
     const group = document.createElement('optgroup');
     group.label = PLATFORM_NAMES[platform];
     for (const [id, l] of Object.entries(OS_LAYOUTS)) {
-      if (l.platform !== platform || l.hidden) continue;
+      if (l.platform !== platform) continue;
       const opt = document.createElement('option');
       opt.value       = id;
       opt.textContent = l.name;
@@ -582,13 +568,14 @@ function initOsLayoutSelector() {
   setOsLayout(resolveOsLayout(sel.value));
 
   sel.addEventListener('change', () => {
-    saveOsLayoutChoice(sel.value);
+    savePref(OS_LAYOUT_STORAGE_KEY, sel.value);
     setOsLayout(resolveOsLayout(sel.value));
     autoRedetectOsLayout();
   });
 
   document.getElementById('os-layout-iso').addEventListener('change', e => {
-    saveMacIsoOverride(e.target.checked);
+    macIsoOverride = e.target.checked;
+    savePref(MAC_ISO_STORAGE_KEY, macIsoOverride ? '1' : '0');
     setOsLayout(resolveOsLayout(sel.value));
   });
 
@@ -599,8 +586,8 @@ function initOsLayoutSelector() {
   }
   detectBtn.addEventListener('click', async () => {
     await redetectOsLayout();
-    showToast(detectedOsLayout
-      ? `Detected ${OS_LAYOUTS[detectedOsLayout].name}`
+    showToast(detected
+      ? `Detected ${OS_LAYOUTS[detected.id].name}`
       : 'Could not detect the computer layout', 'info', 2000);
   });
   window.addEventListener('focus', autoRedetectOsLayout);

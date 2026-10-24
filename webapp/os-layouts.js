@@ -14,9 +14,9 @@
 // Mac tables are written for macOS Keyboard Type = ANSI: HID 0x35 (Backquote)
 // types the grave-position character and HID 0x64 (IntlBackslash) the section
 // character. With Keyboard Type = ISO macOS swaps those two keys, so every Mac
-// layout also gets a hidden "<id>-iso" variant with them swapped.
+// layout also carries an `iso` variant with them swapped.
 
-import { getLabel, getKeysByGroup } from './keycodes.js';
+import { findKey, getLabel, getKeysByGroup } from './keycodes.js';
 
 const RAW_BASE   = 0x88;
 const MOD_SHIFT   = 0x81;
@@ -187,19 +187,16 @@ const LAYOUT_DEFS = {
 const ISO_SWAP = { Backquote: 'IntlBackslash', IntlBackslash: 'Backquote' };
 
 function buildLayout(def, iso = false) {
-  const keys = { ...BASE_KEYS, ...def.keys };
-  let deadKeys = def.dead ?? [];
-  if (iso) {
-    [keys.Backquote, keys.IntlBackslash] = [keys.IntlBackslash, keys.Backquote];
-    deadKeys = deadKeys.map(([k, lvl]) => [ISO_SWAP[k] ?? k, lvl]);
-  }
-  const dead    = new Set(deadKeys.map(([k, lvl]) => `${k}:${lvl}`));
+  const keys    = { ...BASE_KEYS, ...def.keys };
+  const dead    = new Set((def.dead ?? []).map(([k, lvl]) => `${k}:${lvl}`));
+  const at      = phys => (iso && ISO_SWAP[phys]) || phys;   // where the key lands
   const entries = [];
   const byHid   = new Map();
-  for (const [phys, chars] of Object.entries(keys)) {
+  for (const [defPhys, chars] of Object.entries(keys)) {
+    const phys = at(defPhys);
     chars.forEach((char, level) => {
       if (!char) return;
-      const entry = { phys, hid: HID[phys], level, char, dead: dead.has(`${phys}:${level}`) };
+      const entry = { phys, hid: HID[phys], level, char, dead: dead.has(`${defPhys}:${level}`) };
       entries.push(entry);
       byHid.set(`${entry.hid}:${level}`, entry);
     });
@@ -215,8 +212,6 @@ function buildLayout(def, iso = false) {
     name: def.name,
     platform: def.platform,
     regions: def.regions ?? [],
-    hidden: iso,
-    usRef: def.platform === 'mac' ? (iso ? 'us-mac-iso' : 'us-mac') : 'us',
     entries,
     byHid,
     modLevels,
@@ -227,7 +222,7 @@ function buildLayout(def, iso = false) {
 export const OS_LAYOUTS = {};
 for (const [id, def] of Object.entries(LAYOUT_DEFS)) {
   OS_LAYOUTS[id] = buildLayout(def);
-  if (def.platform === 'mac') OS_LAYOUTS[`${id}-iso`] = buildLayout(def, true);
+  if (def.platform === 'mac') OS_LAYOUTS[id].iso = buildLayout(def, true);
 }
 
 // ASCII code → { hid, level } (US layout), and the reverse.
@@ -279,14 +274,17 @@ function modName(modmask, layout) {
 // Label for keys with no character on the layout: the exact KEYS label if there
 // is one (Ctrl+F1), else the modifier plus the key's own name (Shift+Tab).
 function fallbackLabel(code, modmask, layout) {
-  const exact = getLabel(code, modmask);
-  if (!modmask || !isModifier(modmask) || !exact.startsWith('0x')) return exact;
+  const exact = findKey(code, modmask);
+  if (exact || !isModifier(modmask)) return getLabel(code, modmask);
   return `${modName(modmask, layout)}+${getLabel(code, 0)}`;
 }
 
 // Latin letters, including accented ones (ü é ß ñ); not µ ª º
+const LATIN_LOWER = /^[\p{Script=Latin}&&\p{Ll}]$/v;
+const LATIN_UPPER = /^[\p{Script=Latin}&&\p{Lu}]$/v;
+
 function isLetter(char) {
-  return /^\p{Ll}$/u.test(char) && /^\p{Script=Latin}$/u.test(char);
+  return LATIN_LOWER.test(char);
 }
 
 // Letters show as capitals like keycaps and the original key labels, so a
@@ -297,14 +295,14 @@ function charLabel(char) {
     const upper = char.toUpperCase();
     return upper.length === 1 ? upper : char;   // ß stays ß
   }
-  if (/^\p{Lu}$/u.test(char) && /^\p{Script=Latin}$/u.test(char)) return `Shift+${char}`;
+  if (LATIN_UPPER.test(char)) return `Shift+${char}`;
   return char;
 }
 
-// Label (and dead-key flag) for a stored key as it types on a computer layout.
-export function keyInfo(code, modmask, layoutId) {
-  const layout = OS_LAYOUTS[layoutId];
-  const key    = decodeKey(code, modmask, layout);
+// Label (and dead-key flag) for a stored key as it types on a computer layout
+// (an OS_LAYOUTS entry or its `iso` variant).
+export function keyInfo(code, modmask, layout) {
+  const key = decodeKey(code, modmask, layout);
   if (!key) return { label: fallbackLabel(code, modmask, layout), dead: false };
 
   const prefix = key.otherMod ? `${key.otherMod}+` : '';
@@ -323,8 +321,7 @@ export function keyInfo(code, modmask, layoutId) {
 function describeEntry(entry, layout) {
   const mod   = layout.levelMods[entry.level];
   const own   = charLabel(layout.byHid.get(`${entry.hid}:0`)?.char ?? entry.char);
-  const us    = OS_LAYOUTS[layout.usRef];
-  const usKey = charLabel(us.byHid.get(`${entry.hid}:0`).char);
+  const usKey = charLabel(layout.usRef.byHid.get(`${entry.hid}:0`).char);
 
   let text = `${mod ? mod + ' + ' : ''}"${own}" key on ${layout.name}`;
   if (layout.platform === 'pc' && entry.phys === 'IntlBackslash')
@@ -335,13 +332,25 @@ function describeEntry(entry, layout) {
   return text;
 }
 
+// Case- and accent-insensitive search text ("e" matches "É")
+export function foldSearch(s) {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+// Picker groups with each key's search text folded once up front
+function buildKeyGroups(layout) {
+  const groups = buildGroupKeys(layout);
+  for (const g of Object.keys(groups))
+    groups[g] = groups[g].map(k => ({ ...k, search: foldSearch(k.label) }));
+  return groups;
+}
+
 // US keeps the original KEYS; other layouts get their own Letters / Digits /
 // Symbols built from the layout table.
-function buildKeyGroups(layoutId) {
+function buildGroupKeys(layout) {
   const groups = getKeysByGroup();
-  if (layoutId === 'us') return groups;
+  if (layout === OS_LAYOUTS.us) return groups;
 
-  const layout = OS_LAYOUTS[layoutId];
   const ranked = [...layout.entries].sort((a, b) =>
     (a.dead - b.dead) || (a.level - b.level));
 
@@ -375,7 +384,7 @@ function buildKeyGroups(layoutId) {
   groups.Letters = letters;
   groups.Digits  = digits;
   groups.Symbols = symbols;
-  groups.Combos  = groups.Combos.map(k => ({ ...k, label: keyInfo(k.code, k.modmask, layoutId).label }));
+  groups.Combos  = groups.Combos.map(k => ({ ...k, label: keyInfo(k.code, k.modmask, layout).label }));
   return groups;
 }
 
@@ -405,7 +414,7 @@ export async function detectLayout(platform) {
     const swapKeys = platform === 'mac' ? ISO_SWAP : {};
     let best = [], bestScore = 0;
     for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
-      if (layout.platform !== platform || layout.hidden) continue;
+      if (layout.platform !== platform) continue;
       let total = 0, hits = 0;
       for (const e of layout.entries) {
         if (e.level !== 0 || swapKeys[e.phys] || !map.has(e.phys)) continue;
@@ -420,28 +429,42 @@ export async function detectLayout(platform) {
 
     let id = best[0];
     if (best.length > 1) {
-      const regions = (navigator.languages ?? []).map(l => l.split('-')[1]?.toUpperCase());
+      const regions = (navigator.languages ?? []).map(localeRegion);
       id = best.find(b => OS_LAYOUTS[b].regions.some(r => regions.includes(r)));
       if (!id) return null;
     }
 
-    let iso = null;
-    if (platform === 'mac') {
-      const ansi = OS_LAYOUTS[id].byHid;
-      const bq   = map.get('Backquote');
-      const grave   = ansi.get(`${HID.Backquote}:0`)?.char;
-      const section = ansi.get(`${HID.IntlBackslash}:0`)?.char;
-      if (bq && grave !== section) iso = bq === section ? true : bq === grave ? false : null;
-    }
-    return { id, iso };
+    return { id, iso: detectIso(OS_LAYOUTS[id], map.get('Backquote')) };
   } catch (_) {
     return null;
   }
 }
 
+function localeRegion(tag) {
+  try { return new Intl.Locale(tag).region; } catch (_) { return undefined; }
+}
+
+// Whether the Backquote key reports the ISO-swapped character (true), the ANSI
+// one (false), or can't tell (null: Mac only, and the two keys must differ).
+function detectIso(layout, backquote) {
+  if (!layout.iso || !backquote) return null;
+  const ansiChar = layout.byHid.get(`${HID.Backquote}:0`)?.char;
+  const isoChar  = layout.iso.byHid.get(`${HID.Backquote}:0`)?.char;
+  if (ansiChar === isoChar) return null;
+  return backquote === isoChar ? true : backquote === ansiChar ? false : null;
+}
+
 // The tables are static, so each layout's picker groups and notes are built
-// once here (callers must not mutate them).
-for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
-  layout.groups = buildKeyGroups(id);
-  layout.notes  = buildNotes(layout);
+// once here (callers must not mutate them). Tooltips name the US key on the
+// same platform and keyboard type.
+for (const layout of Object.values(OS_LAYOUTS)) {
+  const usBase = layout.platform === 'mac' ? OS_LAYOUTS['us-mac'] : OS_LAYOUTS.us;
+  layout.usRef = usBase;
+  if (layout.iso) layout.iso.usRef = usBase.iso;
+}
+for (const layout of Object.values(OS_LAYOUTS)) {
+  for (const l of layout.iso ? [layout, layout.iso] : [layout]) {
+    l.groups = buildKeyGroups(l);
+    l.notes  = buildNotes(l);
+  }
 }
