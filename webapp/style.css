@@ -380,17 +380,7 @@ select {
 
 select:hover, select:focus { border-color: var(--text-dim); }
 
-.os-layout-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.os-layout-group label {
-  font-size: 0.72rem;
-  color: var(--text-xdim);
-  white-space: nowrap;
-}
+.os-layout-group label { font-size: 0.72rem; }
 
 .os-layout-group select {
   background: none;
@@ -404,6 +394,27 @@ select:hover, select:focus { border-color: var(--text-dim); }
 .os-layout-group select:focus {
   border-color: var(--border);
   color: var(--text);
+}
+
+.os-layout-detect {
+  background: none;
+  border: none;
+  color: var(--text-xdim);
+  font-size: 0.9rem;
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.os-layout-detect:hover,
+.os-layout-detect:focus-visible { color: var(--text); }
+
+/* Dead key: the character appears only after the next key press */
+.key-cell.dead,
+.picker-key.dead {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-dim);
+  text-underline-offset: 3px;
 }
 
 /* ── Keyboard wrapper ──────────────────────────────────────────────────────── */

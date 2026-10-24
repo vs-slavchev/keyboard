@@ -1,6 +1,6 @@
 import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
-import { OS_LAYOUTS, displayLabel, getLayoutKeysByGroup, unavailableChars, detectLayout } from './os-layouts.js';
+import { OS_LAYOUTS, keyInfo, displayLabel, getLayoutKeysByGroup, layoutNotes, detectLayout } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -21,6 +21,7 @@ let controlChar  = null;
 let dataChar     = null;
 let currentLayer = 0;
 let osLayout     = 'us';   // computer layout used for labels and the picker
+let detectedOsLayout = null; // last auto-detection result (null = not detected)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -106,11 +107,15 @@ function setBleConnected(connected) {
 }
 
 // ── Platform detection ────────────────────────────────────────────────────────
+const IS_MAC          = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+const OS_PLATFORM     = IS_MAC ? 'mac' : 'pc';
+const FALLBACK_LAYOUT = IS_MAC ? 'us-mac' : 'us';
+
 function getPlatformInfo() {
   const ua        = navigator.userAgent;
   const isIOS     = /iPhone|iPad|iPod/.test(ua);
   const isAndroid = /Android/.test(ua);
-  const isMac     = /Mac/.test(navigator.platform) && !isIOS;
+  const isMac     = IS_MAC;
   const isWindows = /Win/.test(navigator.platform);
   const isLinux   = /Linux/.test(navigator.platform) && !isAndroid;
   const isFirefox = /Firefox/.test(ua);
@@ -137,8 +142,7 @@ function getPlatformInfo() {
 
 function getConnectSubtext() {
   const ua    = navigator.userAgent;
-  const isMac = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(ua);
-  if (isMac)              return 'Make sure the keyboard is on and in range. macOS may ask for Bluetooth permission the first time.';
+  if (IS_MAC)             return 'Make sure the keyboard is on and in range. macOS may ask for Bluetooth permission the first time.';
   if (/Android/.test(ua)) return 'Make sure the keyboard is on and Bluetooth is enabled on your device.';
   return 'Make sure the keyboard is powered on and in range.';
 }
@@ -305,9 +309,10 @@ function renderGrid() {
       if (!keyEqual(layout[l][r][c], savedLayout[l][r][c]))
         cell.classList.add('modified');
 
-      const keyLabel = displayLabel(code, modmask, osLayout);
+      const { label: keyLabel, dead } = keyInfo(code, modmask, osLayout);
       cell.textContent = keyLabel;
       if (keyLabel.length > 5) cell.classList.add('long-label');
+      if (dead) cell.classList.add('dead');
 
       cell.addEventListener('click', () => openPicker(l, r, c));
       rowEl.appendChild(cell);
@@ -383,6 +388,7 @@ function buildPicker(filter = '') {
       btn.dataset.code    = key.code;
       btn.dataset.modmask = key.modmask;
       if (key.title) btn.title = key.title;
+      if (key.dead)  btn.classList.add('dead');
 
       if (selectedCell) {
         const [curCode, curMod] = layout[selectedCell.layer][selectedCell.row][selectedCell.col];
@@ -397,13 +403,12 @@ function buildPicker(filter = '') {
     section.appendChild(keysEl);
 
     if (groupName === 'Symbols' && !q) {
-      const missing = unavailableChars(osLayout);
-      if (missing.length) {
-        const note = document.createElement('p');
-        note.className   = 'picker-note';
-        note.textContent = `Not typeable on ${OS_LAYOUTS[osLayout].name}: ${missing.join(' ')}`;
-        section.appendChild(note);
-      }
+      const { unavailable, dead } = layoutNotes(osLayout);
+      const name = OS_LAYOUTS[osLayout].name;
+      if (dead.length)
+        appendPickerNote(section, `Dead keys on ${name} (the character appears after the next key press): ${dead.join(' ')}`);
+      if (unavailable.length)
+        appendPickerNote(section, `Not typeable on ${name}: ${unavailable.join(' ')}`);
     }
 
     container.appendChild(section);
@@ -420,17 +425,27 @@ function buildPicker(filter = '') {
   }
 }
 
-function openPicker(layer, row, col) {
-  selectedCell = { layer, row, col };
-  renderGrid();
+function appendPickerNote(section, text) {
+  const note = document.createElement('p');
+  note.className   = 'picker-note';
+  note.textContent = text;
+  section.appendChild(note);
+}
 
-  const [code, modmask] = layout[layer][row][col];
-  const keyLabel        = displayLabel(code, modmask, osLayout);
+function updatePickerHeader() {
+  const { layer, row, col } = selectedCell;
+  const [code, modmask]     = layout[layer][row][col];
 
   document.getElementById('picker-context').textContent =
     `${LAYER_SHORT[layer]} — Row ${row + 1}, Col ${col + 1}`;
   document.getElementById('picker-current-label').textContent =
-    `Currently: ${keyLabel}`;
+    `Currently: ${displayLabel(code, modmask, osLayout)}`;
+}
+
+function openPicker(layer, row, col) {
+  selectedCell = { layer, row, col };
+  renderGrid();
+  updatePickerHeader();
 
   const search = document.getElementById('picker-search');
   search.value = '';
@@ -438,6 +453,9 @@ function openPicker(layer, row, col) {
 
   document.getElementById('picker-overlay').classList.add('open');
   search.focus();
+
+  // The computer's layout may have been switched since the last check
+  redetectOsLayout();
 }
 
 function closePicker() {
@@ -454,11 +472,12 @@ function assignKey(code, modmask) {
 
 // ── Computer layout selector ───────────────────────────────────────────────────
 const OS_LAYOUT_STORAGE_KEY = 'osLayout';
+const PLATFORM_NAMES        = { pc: 'Windows / Linux', mac: 'macOS' };
 
 function loadOsLayoutChoice() {
   try {
     const v = localStorage.getItem(OS_LAYOUT_STORAGE_KEY);
-    if (v === 'auto' || OS_LAYOUTS[v]) return v;
+    if (v === 'auto' || Object.hasOwn(OS_LAYOUTS, v)) return v;
   } catch (_) {}
   return 'auto';
 }
@@ -467,38 +486,81 @@ function saveOsLayoutChoice(v) {
   try { localStorage.setItem(OS_LAYOUT_STORAGE_KEY, v); } catch (_) {}
 }
 
+function resolveOsLayout(choice) {
+  return choice === 'auto' ? (detectedOsLayout || FALLBACK_LAYOUT) : choice;
+}
+
 function setOsLayout(id) {
   osLayout = id;
   renderGrid();
-  if (document.getElementById('picker-overlay').classList.contains('open'))
+  if (document.getElementById('picker-overlay').classList.contains('open')) {
+    updatePickerHeader();
     buildPicker(document.getElementById('picker-search').value);
+  }
 }
 
-async function initOsLayoutSelector() {
+function updateAutoOption() {
+  const opt = document.querySelector('#os-layout-select option[value="auto"]');
+  opt.textContent = detectedOsLayout
+    ? `Auto (${OS_LAYOUTS[detectedOsLayout].name})`
+    : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
+}
+
+// Re-run detection and follow it when "Auto" is selected. Browsers have no
+// layout-change event, so this runs on focus, on picker open and on demand.
+async function redetectOsLayout() {
+  detectedOsLayout = await detectLayout(OS_PLATFORM);
+  updateAutoOption();
+  const id = resolveOsLayout(document.getElementById('os-layout-select').value);
+  if (id !== osLayout) setOsLayout(id);
+}
+
+function initOsLayoutSelector() {
   const sel = document.getElementById('os-layout-select');
 
   const autoOpt = document.createElement('option');
-  autoOpt.value       = 'auto';
-  autoOpt.textContent = 'Auto';
+  autoOpt.value = 'auto';
   sel.appendChild(autoOpt);
-  for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
-    const opt = document.createElement('option');
-    opt.value       = id;
-    opt.textContent = layout.name;
-    sel.appendChild(opt);
+
+  // Current platform's layouts first
+  for (const platform of IS_MAC ? ['mac', 'pc'] : ['pc', 'mac']) {
+    const group = document.createElement('optgroup');
+    group.label = PLATFORM_NAMES[platform];
+    for (const [id, l] of Object.entries(OS_LAYOUTS)) {
+      if (l.platform !== platform) continue;
+      const opt = document.createElement('option');
+      opt.value       = id;
+      opt.textContent = l.name;
+      group.appendChild(opt);
+    }
+    sel.appendChild(group);
   }
 
-  const detected = await detectLayout();
-  const resolve  = v => v === 'auto' ? (detected || 'us') : v;
-  autoOpt.textContent = `Auto (${OS_LAYOUTS[detected || 'us'].name})`;
-
   sel.value = loadOsLayoutChoice();
-  setOsLayout(resolve(sel.value));
+  updateAutoOption();
+  setOsLayout(resolveOsLayout(sel.value));
 
   sel.addEventListener('change', () => {
     saveOsLayoutChoice(sel.value);
-    setOsLayout(resolve(sel.value));
+    setOsLayout(resolveOsLayout(sel.value));
   });
+
+  const detectBtn = document.getElementById('os-layout-detect');
+  if (!navigator.keyboard?.getLayoutMap) {
+    detectBtn.hidden = true;
+    return;
+  }
+  detectBtn.addEventListener('click', async () => {
+    await redetectOsLayout();
+    showToast(detectedOsLayout
+      ? `Detected ${OS_LAYOUTS[detectedOsLayout].name}`
+      : 'Could not detect the computer layout', 'info', 2000);
+  });
+  window.addEventListener('focus', redetectOsLayout);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) redetectOsLayout();
+  });
+  redetectOsLayout();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
