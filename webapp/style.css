@@ -350,6 +350,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .preset-group {
@@ -378,6 +379,44 @@ select {
 }
 
 select:hover, select:focus { border-color: var(--text-dim); }
+
+.os-layout-group label { font-size: 0.72rem; }
+
+.os-layout-group select {
+  background: none;
+  border-color: transparent;
+  color: var(--text-xdim);
+  font-size: 0.74rem;
+  padding: 3px 4px;
+}
+
+.os-layout-group select:hover,
+.os-layout-group select:focus {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.os-iso-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.os-layout-detect {
+  color: var(--text-xdim);
+  font-size: 0.9rem;
+  padding: 2px 4px;
+}
+
+.os-layout-detect:focus-visible { color: var(--text); }
+
+/* Dead key: the character appears only after the next key press */
+.key-cell.dead,
+.picker-key.dead {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-dim);
+  text-underline-offset: 3px;
+}
 
 /* ── Keyboard wrapper ──────────────────────────────────────────────────────── */
 .keyboard-scroll {
@@ -669,6 +708,12 @@ select:hover, select:focus { border-color: var(--text-dim); }
   background: oklch(62% 0.22 245 / 0.15);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.picker-note {
+  font-size: 0.74rem;
+  color: var(--text-xdim);
+  margin-top: 8px;
 }
 
 #picker-no-results {

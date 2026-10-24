@@ -1,5 +1,6 @@
-import { KEYS, GROUP_ORDER, getLabel, getKeysByGroup } from './keycodes.js';
+import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
+import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -19,6 +20,8 @@ let bleDevice    = null;
 let controlChar  = null;
 let dataChar     = null;
 let currentLayer = 0;
+let osLayout     = OS_LAYOUTS.us;   // computer layout used for labels and the picker
+let detected     = null;   // last auto-detection result { id, iso }, null = not detected
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -104,11 +107,15 @@ function setBleConnected(connected) {
 }
 
 // ── Platform detection ────────────────────────────────────────────────────────
+const IS_MAC          = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+const OS_PLATFORM     = IS_MAC ? 'mac' : 'pc';
+const FALLBACK_LAYOUT = IS_MAC ? 'us-mac' : 'us';
+const HAS_LAYOUT_MAP  = !!navigator.keyboard?.getLayoutMap;
+
 function getPlatformInfo() {
   const ua        = navigator.userAgent;
   const isIOS     = /iPhone|iPad|iPod/.test(ua);
   const isAndroid = /Android/.test(ua);
-  const isMac     = /Mac/.test(navigator.platform) && !isIOS;
   const isWindows = /Win/.test(navigator.platform);
   const isLinux   = /Linux/.test(navigator.platform) && !isAndroid;
   const isFirefox = /Firefox/.test(ua);
@@ -126,7 +133,7 @@ function getPlatformInfo() {
     return { type: 'warn', text: 'On Linux, Web Bluetooth may need to be enabled first: open chrome://flags/#enable-experimental-web-platform-features and set it to Enabled, then relaunch Chrome.' };
   if (isAndroid)
     return { type: 'ok', text: 'Chrome on Android is supported. Make sure Bluetooth is enabled in system Settings before connecting.' };
-  if (isMac && (isChrome || isEdge))
+  if (IS_MAC && (isChrome || isEdge))
     return { type: 'ok', text: 'Chrome / Edge on Mac is supported. macOS may show a Bluetooth permission prompt the first time — click OK to allow it.' };
   if (isWindows && (isChrome || isEdge))
     return { type: 'ok', text: 'Chrome / Edge on Windows is supported. Make sure Bluetooth is turned on in Windows Settings.' };
@@ -135,8 +142,7 @@ function getPlatformInfo() {
 
 function getConnectSubtext() {
   const ua    = navigator.userAgent;
-  const isMac = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(ua);
-  if (isMac)              return 'Make sure the keyboard is on and in range. macOS may ask for Bluetooth permission the first time.';
+  if (IS_MAC)             return 'Make sure the keyboard is on and in range. macOS may ask for Bluetooth permission the first time.';
   if (/Android/.test(ua)) return 'Make sure the keyboard is on and Bluetooth is enabled on your device.';
   return 'Make sure the keyboard is powered on and in range.';
 }
@@ -303,9 +309,10 @@ function renderGrid() {
       if (!keyEqual(layout[l][r][c], savedLayout[l][r][c]))
         cell.classList.add('modified');
 
-      const keyLabel = getLabel(code, modmask);
+      const { label: keyLabel, dead } = keyInfo(code, modmask, osLayout);
       cell.textContent = keyLabel;
       if (keyLabel.length > 5) cell.classList.add('long-label');
+      if (dead) cell.classList.add('dead');
 
       cell.addEventListener('click', () => openPicker(l, r, c));
       rowEl.appendChild(cell);
@@ -349,16 +356,16 @@ function initPresetSelector() {
 const LAYER_SHORT = ['Base', 'Num/Nav'];
 
 function buildPicker(filter = '') {
-  const groups    = getKeysByGroup();
+  const groups    = osLayout.groups;
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
-  const q = filter.trim().toLowerCase();
+  const q = foldSearch(filter.trim());
   let totalVisible = 0;
 
   for (const groupName of GROUP_ORDER) {
     const keys = (groups[groupName] || []).filter(
-      k => !q || k.label.toLowerCase().includes(q)
+      k => !q || k.search.includes(q)
     );
     if (keys.length === 0) continue;
     totalVisible += keys.length;
@@ -380,6 +387,8 @@ function buildPicker(filter = '') {
       btn.textContent     = key.label;
       btn.dataset.code    = key.code;
       btn.dataset.modmask = key.modmask;
+      if (key.title) btn.title = key.title;
+      if (key.dead)  btn.classList.add('dead');
 
       if (selectedCell) {
         const [curCode, curMod] = layout[selectedCell.layer][selectedCell.row][selectedCell.col];
@@ -392,6 +401,16 @@ function buildPicker(filter = '') {
     }
 
     section.appendChild(keysEl);
+
+    if (groupName === 'Symbols' && !q) {
+      const { unavailable, dead } = osLayout.notes;
+      const name = osLayout.name;
+      if (dead.length)
+        appendPickerNote(section, `Dead keys on ${name} (the character appears after the next key press): ${dead.join(' ')}`);
+      if (unavailable.length)
+        appendPickerNote(section, `Not typeable on ${name}: ${unavailable.join(' ')}`);
+    }
+
     container.appendChild(section);
   }
 
@@ -406,17 +425,27 @@ function buildPicker(filter = '') {
   }
 }
 
-function openPicker(layer, row, col) {
-  selectedCell = { layer, row, col };
-  renderGrid();
+function appendPickerNote(section, text) {
+  const note = document.createElement('p');
+  note.className   = 'picker-note';
+  note.textContent = text;
+  section.appendChild(note);
+}
 
-  const [code, modmask] = layout[layer][row][col];
-  const keyLabel        = getLabel(code, modmask);
+function updatePickerHeader() {
+  const { layer, row, col } = selectedCell;
+  const [code, modmask]     = layout[layer][row][col];
 
   document.getElementById('picker-context').textContent =
     `${LAYER_SHORT[layer]} — Row ${row + 1}, Col ${col + 1}`;
   document.getElementById('picker-current-label').textContent =
-    `Currently: ${keyLabel}`;
+    `Currently: ${keyInfo(code, modmask, osLayout).label}`;
+}
+
+function openPicker(layer, row, col) {
+  selectedCell = { layer, row, col };
+  renderGrid();
+  updatePickerHeader();
 
   const search = document.getElementById('picker-search');
   search.value = '';
@@ -424,6 +453,9 @@ function openPicker(layer, row, col) {
 
   document.getElementById('picker-overlay').classList.add('open');
   search.focus();
+
+  // The computer's layout may have been switched since the last check
+  autoRedetectOsLayout();
 }
 
 function closePicker() {
@@ -436,6 +468,146 @@ function assignKey(code, modmask) {
   if (!selectedCell) return;
   layout[selectedCell.layer][selectedCell.row][selectedCell.col] = [code, modmask];
   closePicker();
+}
+
+// ── Computer layout selector ───────────────────────────────────────────────────
+const OS_LAYOUT_STORAGE_KEY = 'osLayout';
+const MAC_ISO_STORAGE_KEY   = 'osLayoutMacIso';
+const PLATFORM_NAMES        = { pc: 'Windows / Linux', mac: 'macOS' };
+
+// localStorage can throw (privacy mode, blocked storage); treat that as unset
+function loadPref(key) {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
+}
+
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch (_) {}
+}
+
+function loadOsLayoutChoice() {
+  const v = loadPref(OS_LAYOUT_STORAGE_KEY);
+  return v === 'auto' || Object.hasOwn(OS_LAYOUTS, v) ? v : 'auto';
+}
+
+// Mac keyboard type setting: true (ISO) / false (ANSI) / null (auto-detect).
+// Older versions stored '1' / '0'.
+const isoPref       = loadPref(MAC_ISO_STORAGE_KEY);
+let macIsoOverride  = ['iso', '1'].includes(isoPref) ? true : ['ansi', '0'].includes(isoPref) ? false : null;
+
+function macIso() {
+  return macIsoOverride ?? detected?.iso ?? false;
+}
+
+function resolveOsLayout(choice) {
+  const base = OS_LAYOUTS[choice === 'auto' ? (detected?.id || FALLBACK_LAYOUT) : choice];
+  return base.iso && macIso() ? base.iso : base;
+}
+
+function setOsLayout(layout) {
+  document.getElementById('os-iso-toggle').hidden = layout.platform !== 'mac';
+  if (layout === osLayout) return;
+  osLayout = layout;
+  renderGrid();
+  if (document.getElementById('picker-overlay').classList.contains('open')) {
+    updatePickerHeader();
+    buildPicker(document.getElementById('picker-search').value);
+  }
+}
+
+function updateLayoutControls() {
+  const opt = document.querySelector('#os-layout-select option[value="auto"]');
+  opt.textContent = detected
+    ? `Auto (${OS_LAYOUTS[detected.id].name})`
+    : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
+
+  const isoSel = document.getElementById('os-layout-iso');
+  const found  = detected?.iso;
+  isoSel.options[0].textContent = found == null ? 'Auto (unknown – ANSI)' : `Auto (${found ? 'ISO' : 'ANSI'})`;
+  isoSel.value = macIsoOverride == null ? 'auto' : macIsoOverride ? 'iso' : 'ansi';
+}
+
+// Re-run detection and follow it when "Auto" is selected. Concurrent callers
+// share the in-flight run, so a stale result can't land after a newer one.
+// A failed check keeps the previous result. Resolves to whether it succeeded.
+let detecting = null;
+
+function redetectOsLayout() {
+  detecting ??= detectLayout(OS_PLATFORM)
+    .then(result => {
+      detected = result;
+      updateLayoutControls();
+      setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => { detecting = null; });
+  return detecting;
+}
+
+// Browsers have no layout-change event, so with "Auto" selected this runs on
+// window focus and picker open to catch an OS layout switch.
+function autoRedetectOsLayout() {
+  if (HAS_LAYOUT_MAP && document.getElementById('os-layout-select').value === 'auto')
+    redetectOsLayout();
+}
+
+function initOsLayoutSelector() {
+  const sel = document.getElementById('os-layout-select');
+
+  const autoOpt = document.createElement('option');
+  autoOpt.value = 'auto';
+  sel.appendChild(autoOpt);
+
+  // Current platform's layouts first
+  for (const platform of IS_MAC ? ['mac', 'pc'] : ['pc', 'mac']) {
+    const group = document.createElement('optgroup');
+    group.label = PLATFORM_NAMES[platform];
+    for (const [id, l] of Object.entries(OS_LAYOUTS)) {
+      if (l.platform !== platform) continue;
+      const opt = document.createElement('option');
+      opt.value       = id;
+      opt.textContent = l.name;
+      group.appendChild(opt);
+    }
+    sel.appendChild(group);
+  }
+
+  sel.value = loadOsLayoutChoice();
+  updateLayoutControls();
+  setOsLayout(resolveOsLayout(sel.value));
+
+  sel.addEventListener('change', () => {
+    savePref(OS_LAYOUT_STORAGE_KEY, sel.value);
+    setOsLayout(resolveOsLayout(sel.value));
+    autoRedetectOsLayout();
+  });
+
+  document.getElementById('os-layout-iso').addEventListener('change', e => {
+    const v = e.target.value;
+    macIsoOverride = v === 'auto' ? null : v === 'iso';
+    savePref(MAC_ISO_STORAGE_KEY, v);
+    setOsLayout(resolveOsLayout(sel.value));
+  });
+
+  const detectBtn = document.getElementById('os-layout-detect');
+  if (!HAS_LAYOUT_MAP) {
+    detectBtn.hidden = true;
+    return;
+  }
+  // The button means "detect automatically": it switches a manual choice to Auto
+  detectBtn.addEventListener('click', async () => {
+    if (sel.value !== 'auto') {
+      sel.value = 'auto';
+      savePref(OS_LAYOUT_STORAGE_KEY, 'auto');
+    }
+    const ok = await redetectOsLayout();
+    setOsLayout(resolveOsLayout(sel.value));
+    showToast(ok && detected
+      ? `Detected ${OS_LAYOUTS[detected.id].name}`
+      : 'Could not detect the computer layout', 'info', 2000);
+  });
+  window.addEventListener('focus', autoRedetectOsLayout);
+  redetectOsLayout();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -466,6 +638,7 @@ function init() {
   });
 
   initPresetSelector();
+  initOsLayoutSelector();
 
   const pairingToggle = document.getElementById('pairing-toggle');
   const pairingPanel  = document.getElementById('pairing-instructions');

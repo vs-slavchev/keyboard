@@ -150,8 +150,12 @@ export const GROUP_ORDER = [
   'Special', 'Navigation', 'Function', 'Meta', 'Combos',
 ];
 
+export function findKey(code, modmask) {
+  return KEYS.find(k => k.code === code && k.modmask === modmask);
+}
+
 export function getLabel(code, modmask) {
-  const key = KEYS.find(k => k.code === code && k.modmask === modmask);
+  const key = findKey(code, modmask);
   if (key) return key.label;
   if (code === 0x00) return 'None';
   return `0x${code.toString(16).padStart(2, '0')}`;
