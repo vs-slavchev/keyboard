@@ -19,8 +19,9 @@ import { getLabel, getKeysByGroup } from './keycodes.js';
 
 const RAW_BASE   = 0x88;
 const MOD_SHIFT   = 0x81;
+const MOD_ALT_L   = 0x82;
 const MOD_SHIFT_R = 0x85;
-const MOD_ALTGR   = 0x86;
+const MOD_ALTGR   = 0x86;   // Right Alt: AltGr on PC, Option on Mac
 
 // Physical key (KeyboardEvent.code name) → HID usage ID
 const HID = {
@@ -33,39 +34,36 @@ for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i
 for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1D + i;
 HID.Digit0 = 0x27;
 
-// Letter keys default to [x, X]; tables list only what differs.
+// Every layout starts from Space, the letters as [x, X] and the US symbol keys,
+// then overrides what differs.
 // Each entry: [plain, shift, altgr/option?] — '' means nothing on that level.
+const BASE_KEYS = { Space: [' '] };
+for (let i = 0; i < 26; i++) {
+  const c = String.fromCharCode(97 + i);
+  BASE_KEYS['Key' + c.toUpperCase()] = [c, c.toUpperCase()];
+}
+Object.assign(BASE_KEYS, {
+  Backquote: ['`', '~'], Digit1: ['1', '!'], Digit2: ['2', '@'], Digit3: ['3', '#'],
+  Digit4: ['4', '$'], Digit5: ['5', '%'], Digit6: ['6', '^'], Digit7: ['7', '&'],
+  Digit8: ['8', '*'], Digit9: ['9', '('], Digit0: ['0', ')'], Minus: ['-', '_'],
+  Equal: ['=', '+'], BracketLeft: ['[', '{'], BracketRight: [']', '}'],
+  Backslash: ['\\', '|'], Semicolon: [';', ':'], Quote: ["'", '"'],
+  Comma: [',', '<'], Period: ['.', '>'], Slash: ['/', '?'],
+  IntlBackslash: ['\\', '|'],
+});
+
 // `dead` lists [key, level] pairs that are dead keys (accent + next key).
 // Mac tables only list single-Option characters; Shift+Option ones can't be
 // sent with one modifier and show up as "not typeable".
 const LAYOUT_DEFS = {
-  us: {
-    name: 'English (US)',
-    platform: 'pc',
-    keys: {
-      Backquote: ['`', '~'], Digit1: ['1', '!'], Digit2: ['2', '@'], Digit3: ['3', '#'],
-      Digit4: ['4', '$'], Digit5: ['5', '%'], Digit6: ['6', '^'], Digit7: ['7', '&'],
-      Digit8: ['8', '*'], Digit9: ['9', '('], Digit0: ['0', ')'], Minus: ['-', '_'],
-      Equal: ['=', '+'], BracketLeft: ['[', '{'], BracketRight: [']', '}'],
-      Backslash: ['\\', '|'], Semicolon: [';', ':'], Quote: ["'", '"'],
-      Comma: [',', '<'], Period: ['.', '>'], Slash: ['/', '?'],
-      IntlBackslash: ['\\', '|'],
-    },
-    dead: [],
-  },
+  us: { name: 'English (US)', platform: 'pc', keys: {} },
   gb: {
     name: 'English (UK)',
     platform: 'pc',
     keys: {
-      Backquote: ['`', '¬', '¦'], Digit1: ['1', '!'], Digit2: ['2', '"'], Digit3: ['3', '£'],
-      Digit4: ['4', '$', '€'], Digit5: ['5', '%'], Digit6: ['6', '^'], Digit7: ['7', '&'],
-      Digit8: ['8', '*'], Digit9: ['9', '('], Digit0: ['0', ')'], Minus: ['-', '_'],
-      Equal: ['=', '+'], BracketLeft: ['[', '{'], BracketRight: [']', '}'],
-      Backslash: ['#', '~'], Semicolon: [';', ':'], Quote: ["'", '@'],
-      Comma: [',', '<'], Period: ['.', '>'], Slash: ['/', '?'],
-      IntlBackslash: ['\\', '|'],
+      Backquote: ['`', '¬', '¦'], Digit2: ['2', '"'], Digit3: ['3', '£'], Digit4: ['4', '$', '€'],
+      Backslash: ['#', '~'], Quote: ["'", '@'],
     },
-    dead: [],
   },
   de: {
     name: 'German (QWERTZ)',
@@ -136,30 +134,12 @@ const LAYOUT_DEFS = {
   'us-mac': {
     name: 'English (US, Mac)',
     platform: 'mac',
-    keys: {
-      Backquote: ['`', '~'], Digit1: ['1', '!'], Digit2: ['2', '@'], Digit3: ['3', '#'],
-      Digit4: ['4', '$'], Digit5: ['5', '%'], Digit6: ['6', '^'], Digit7: ['7', '&'],
-      Digit8: ['8', '*'], Digit9: ['9', '('], Digit0: ['0', ')'], Minus: ['-', '_'],
-      Equal: ['=', '+'], BracketLeft: ['[', '{'], BracketRight: [']', '}'],
-      Backslash: ['\\', '|'], Semicolon: [';', ':'], Quote: ["'", '"'],
-      Comma: [',', '<'], Period: ['.', '>'], Slash: ['/', '?'],
-      IntlBackslash: ['§', '±'],
-    },
-    dead: [],
+    keys: { IntlBackslash: ['§', '±'] },
   },
   'gb-mac': {
     name: 'English (UK, Mac)',
     platform: 'mac',
-    keys: {
-      Backquote: ['`', '~'], Digit1: ['1', '!'], Digit2: ['2', '@', '€'], Digit3: ['3', '£', '#'],
-      Digit4: ['4', '$'], Digit5: ['5', '%'], Digit6: ['6', '^'], Digit7: ['7', '&'],
-      Digit8: ['8', '*'], Digit9: ['9', '('], Digit0: ['0', ')'], Minus: ['-', '_'],
-      Equal: ['=', '+'], BracketLeft: ['[', '{'], BracketRight: [']', '}'],
-      Backslash: ['\\', '|'], Semicolon: [';', ':'], Quote: ["'", '"'],
-      Comma: [',', '<'], Period: ['.', '>'], Slash: ['/', '?'],
-      IntlBackslash: ['§', '±'],
-    },
-    dead: [],
+    keys: { Digit2: ['2', '@', '€'], Digit3: ['3', '£', '#'], IntlBackslash: ['§', '±'] },
   },
   'de-mac': {
     name: 'German (Mac)',
@@ -197,17 +177,11 @@ const LAYOUT_DEFS = {
   },
 };
 
-// Expand each definition into a list of { phys, hid, level, char, dead } entries
-// and a lookup from "hid:level" to entry.
+// Expand each definition into a list of { phys, hid, level, char, dead } entries,
+// a lookup from "hid:level" to entry, and which modifiers select which level.
 function buildLayout(def) {
-  const keys = { Space: [' ', ' '] };
-  for (let i = 0; i < 26; i++) {
-    const c = String.fromCharCode(97 + i);
-    keys['Key' + c.toUpperCase()] = [c, c.toUpperCase()];
-  }
-  Object.assign(keys, def.keys);
-
-  const dead    = new Set(def.dead.map(([k, lvl]) => `${k}:${lvl}`));
+  const keys    = { ...BASE_KEYS, ...def.keys };
+  const dead    = new Set((def.dead ?? []).map(([k, lvl]) => `${k}:${lvl}`));
   const entries = [];
   const byHid   = new Map();
   for (const [phys, chars] of Object.entries(keys)) {
@@ -218,13 +192,20 @@ function buildLayout(def) {
       byHid.set(`${entry.hid}:${level}`, entry);
     });
   }
+
+  // Either Option key works on Mac; on PC only layouts with an AltGr level
+  // treat Right Alt as AltGr (elsewhere it is plain Alt).
+  const modLevels = { [MOD_SHIFT]: 1, [MOD_SHIFT_R]: 1 };
+  if (def.platform === 'mac') modLevels[MOD_ALT_L] = modLevels[MOD_ALTGR] = 2;
+  else if (entries.some(e => e.level === 2)) modLevels[MOD_ALTGR] = 2;
+
   return {
     name: def.name,
     platform: def.platform,
     entries,
     byHid,
+    modLevels,
     levelMods: ['', 'Shift', def.platform === 'mac' ? 'Option' : 'AltGr'],
-    hasAltGr: entries.some(e => e.level === 2),
   };
 }
 
@@ -241,8 +222,8 @@ for (const e of OS_LAYOUTS.us.entries) {
   KEY_TO_ASCII.set(`${e.hid}:${e.level}`, code);
 }
 
-// Resolve a stored [code, modmask] to the physical key and modifiers it sends.
-// Right Alt only counts as AltGr/Option on layouts that have that level.
+// Resolve a stored [code, modmask] to the physical key and level it types on
+// a layout, plus any other modifier held with it.
 function decodeKey(code, modmask, layout) {
   let hid, level;
   if (code < 0x80) {
@@ -257,12 +238,10 @@ function decodeKey(code, modmask, layout) {
   }
 
   let otherMod = null;
-  if (modmask === MOD_SHIFT || modmask === MOD_SHIFT_R) {
+  const modLevel = layout.modLevels[modmask];
+  if (modLevel) {
     if (level !== 0) return null;
-    level = 1;
-  } else if (modmask === MOD_ALTGR && layout.hasAltGr) {
-    if (level !== 0) return null;
-    level = 2;
+    level = modLevel;
   } else if (modmask) {
     if (modmask < 0x80 || modmask > 0x87) return null;
     otherMod = getLabel(modmask, 0).split(' ')[0];
@@ -281,7 +260,7 @@ function charLabel(char) {
 
 // Label (and dead-key flag) for a stored key as it types on a computer layout.
 export function keyInfo(code, modmask, layoutId) {
-  const layout = OS_LAYOUTS[layoutId] || OS_LAYOUTS.us;
+  const layout = OS_LAYOUTS[layoutId];
   const key    = decodeKey(code, modmask, layout);
   if (!key) return { label: getLabel(code, modmask), dead: false };
 
@@ -296,10 +275,6 @@ export function keyInfo(code, modmask, layoutId) {
   return { label: getLabel(code, modmask), dead: false };
 }
 
-export function displayLabel(code, modmask, layoutId) {
-  return keyInfo(code, modmask, layoutId).label;
-}
-
 function describeEntry(entry, layout) {
   const mod = layout.levelMods[entry.level];
   const pos = entry.phys === 'IntlBackslash'
@@ -310,20 +285,11 @@ function describeEntry(entry, layout) {
   return text;
 }
 
-// Picker groups per layout. The tables are static, so each layout's groups are
-// built once on first use and reused (callers must not mutate them).
-const groupsCache = new Map();
-
-export function getLayoutKeysByGroup(layoutId) {
-  if (!groupsCache.has(layoutId)) groupsCache.set(layoutId, buildKeyGroups(layoutId));
-  return groupsCache.get(layoutId);
-}
-
 // US keeps the original KEYS; other layouts get their own Letters / Digits /
 // Symbols built from the layout table.
 function buildKeyGroups(layoutId) {
   const groups = getKeysByGroup();
-  if (layoutId === 'us' || !OS_LAYOUTS[layoutId]) return groups;
+  if (layoutId === 'us') return groups;
 
   const layout = OS_LAYOUTS[layoutId];
   const ranked = [...layout.entries].sort((a, b) =>
@@ -359,27 +325,21 @@ function buildKeyGroups(layoutId) {
   groups.Letters = letters;
   groups.Digits  = digits;
   groups.Symbols = symbols;
-  groups.Combos  = groups.Combos.map(k => ({ ...k, label: displayLabel(k.code, k.modmask, layoutId) }));
+  groups.Combos  = groups.Combos.map(k => ({ ...k, label: keyInfo(k.code, k.modmask, layoutId).label }));
   return groups;
 }
 
 // Printable ASCII characters a layout can't type with a single modifier, and
 // characters it only has as dead keys (they appear after the next key press).
-const notesCache = new Map();
-
-export function layoutNotes(layoutId) {
-  if (notesCache.has(layoutId)) return notesCache.get(layoutId);
-  const layout   = OS_LAYOUTS[layoutId] || OS_LAYOUTS.us;
-  const live     = new Set(layout.entries.filter(e => !e.dead).map(e => e.char));
-  const deadOnly = new Set(layout.entries.filter(e => e.dead && !live.has(e.char)).map(e => e.char));
+function buildNotes(layout) {
+  const all  = new Set(layout.entries.map(e => e.char));
+  const live = new Set(layout.entries.filter(e => !e.dead).map(e => e.char));
   const unavailable = [];
   for (let c = 0x21; c < 0x7F; c++) {
     const ch = String.fromCharCode(c);
-    if (!live.has(ch) && !deadOnly.has(ch)) unavailable.push(ch);
+    if (!all.has(ch)) unavailable.push(ch);
   }
-  const notes = { unavailable, dead: [...deadOnly] };
-  notesCache.set(layoutId, notes);
-  return notes;
+  return { unavailable, dead: [...all].filter(ch => !live.has(ch)) };
 }
 
 // Guess the computer's layout from the browser (Chrome/Edge desktop only),
@@ -394,7 +354,7 @@ export async function detectLayout(platform) {
       if (layout.platform !== platform) continue;
       let total = 0, hits = 0;
       for (const e of layout.entries) {
-        if (e.level !== 0 || e.phys === 'Space' || !map.has(e.phys)) continue;
+        if (e.level !== 0 || !map.has(e.phys)) continue;
         total++;
         if (map.get(e.phys).toLowerCase() === e.char.toLowerCase()) hits++;
       }
@@ -405,4 +365,11 @@ export async function detectLayout(platform) {
   } catch (_) {
     return null;
   }
+}
+
+// The tables are static, so each layout's picker groups and notes are built
+// once here (callers must not mutate them).
+for (const [id, layout] of Object.entries(OS_LAYOUTS)) {
+  layout.groups = buildKeyGroups(id);
+  layout.notes  = buildNotes(layout);
 }

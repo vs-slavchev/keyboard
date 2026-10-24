@@ -1,6 +1,6 @@
 import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
-import { OS_LAYOUTS, keyInfo, displayLabel, getLayoutKeysByGroup, layoutNotes, detectLayout } from './os-layouts.js';
+import { OS_LAYOUTS, keyInfo, detectLayout } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -110,12 +110,12 @@ function setBleConnected(connected) {
 const IS_MAC          = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(navigator.userAgent);
 const OS_PLATFORM     = IS_MAC ? 'mac' : 'pc';
 const FALLBACK_LAYOUT = IS_MAC ? 'us-mac' : 'us';
+const HAS_LAYOUT_MAP  = !!navigator.keyboard?.getLayoutMap;
 
 function getPlatformInfo() {
   const ua        = navigator.userAgent;
   const isIOS     = /iPhone|iPad|iPod/.test(ua);
   const isAndroid = /Android/.test(ua);
-  const isMac     = IS_MAC;
   const isWindows = /Win/.test(navigator.platform);
   const isLinux   = /Linux/.test(navigator.platform) && !isAndroid;
   const isFirefox = /Firefox/.test(ua);
@@ -133,7 +133,7 @@ function getPlatformInfo() {
     return { type: 'warn', text: 'On Linux, Web Bluetooth may need to be enabled first: open chrome://flags/#enable-experimental-web-platform-features and set it to Enabled, then relaunch Chrome.' };
   if (isAndroid)
     return { type: 'ok', text: 'Chrome on Android is supported. Make sure Bluetooth is enabled in system Settings before connecting.' };
-  if (isMac && (isChrome || isEdge))
+  if (IS_MAC && (isChrome || isEdge))
     return { type: 'ok', text: 'Chrome / Edge on Mac is supported. macOS may show a Bluetooth permission prompt the first time — click OK to allow it.' };
   if (isWindows && (isChrome || isEdge))
     return { type: 'ok', text: 'Chrome / Edge on Windows is supported. Make sure Bluetooth is turned on in Windows Settings.' };
@@ -356,7 +356,7 @@ function initPresetSelector() {
 const LAYER_SHORT = ['Base', 'Num/Nav'];
 
 function buildPicker(filter = '') {
-  const groups    = getLayoutKeysByGroup(osLayout);
+  const groups    = OS_LAYOUTS[osLayout].groups;
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
@@ -403,7 +403,7 @@ function buildPicker(filter = '') {
     section.appendChild(keysEl);
 
     if (groupName === 'Symbols' && !q) {
-      const { unavailable, dead } = layoutNotes(osLayout);
+      const { unavailable, dead } = OS_LAYOUTS[osLayout].notes;
       const name = OS_LAYOUTS[osLayout].name;
       if (dead.length)
         appendPickerNote(section, `Dead keys on ${name} (the character appears after the next key press): ${dead.join(' ')}`);
@@ -439,7 +439,7 @@ function updatePickerHeader() {
   document.getElementById('picker-context').textContent =
     `${LAYER_SHORT[layer]} — Row ${row + 1}, Col ${col + 1}`;
   document.getElementById('picker-current-label').textContent =
-    `Currently: ${displayLabel(code, modmask, osLayout)}`;
+    `Currently: ${keyInfo(code, modmask, osLayout).label}`;
 }
 
 function openPicker(layer, row, col) {
@@ -455,7 +455,7 @@ function openPicker(layer, row, col) {
   search.focus();
 
   // The computer's layout may have been switched since the last check
-  redetectOsLayout();
+  autoRedetectOsLayout();
 }
 
 function closePicker() {
@@ -491,6 +491,7 @@ function resolveOsLayout(choice) {
 }
 
 function setOsLayout(id) {
+  if (id === osLayout) return;
   osLayout = id;
   renderGrid();
   if (document.getElementById('picker-overlay').classList.contains('open')) {
@@ -506,13 +507,25 @@ function updateAutoOption() {
     : `Auto (not detected – ${OS_LAYOUTS[FALLBACK_LAYOUT].name})`;
 }
 
-// Re-run detection and follow it when "Auto" is selected. Browsers have no
-// layout-change event, so this runs on focus, on picker open and on demand.
-async function redetectOsLayout() {
-  detectedOsLayout = await detectLayout(OS_PLATFORM);
-  updateAutoOption();
-  const id = resolveOsLayout(document.getElementById('os-layout-select').value);
-  if (id !== osLayout) setOsLayout(id);
+// Re-run detection and follow it when "Auto" is selected. Concurrent callers
+// share the in-flight run, so a stale result can't land after a newer one.
+let detecting = null;
+
+function redetectOsLayout() {
+  detecting ??= detectLayout(OS_PLATFORM).then(id => {
+    detecting = null;
+    detectedOsLayout = id;
+    updateAutoOption();
+    setOsLayout(resolveOsLayout(document.getElementById('os-layout-select').value));
+  });
+  return detecting;
+}
+
+// Browsers have no layout-change event, so with "Auto" selected this runs on
+// window focus and picker open to catch an OS layout switch.
+function autoRedetectOsLayout() {
+  if (HAS_LAYOUT_MAP && document.getElementById('os-layout-select').value === 'auto')
+    redetectOsLayout();
 }
 
 function initOsLayoutSelector() {
@@ -543,10 +556,11 @@ function initOsLayoutSelector() {
   sel.addEventListener('change', () => {
     saveOsLayoutChoice(sel.value);
     setOsLayout(resolveOsLayout(sel.value));
+    autoRedetectOsLayout();
   });
 
   const detectBtn = document.getElementById('os-layout-detect');
-  if (!navigator.keyboard?.getLayoutMap) {
+  if (!HAS_LAYOUT_MAP) {
     detectBtn.hidden = true;
     return;
   }
@@ -556,10 +570,7 @@ function initOsLayoutSelector() {
       ? `Detected ${OS_LAYOUTS[detectedOsLayout].name}`
       : 'Could not detect the computer layout', 'info', 2000);
   });
-  window.addEventListener('focus', redetectOsLayout);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) redetectOsLayout();
-  });
+  window.addEventListener('focus', autoRedetectOsLayout);
   redetectOsLayout();
 }
 

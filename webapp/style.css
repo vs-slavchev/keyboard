@@ -397,16 +397,11 @@ select:hover, select:focus { border-color: var(--text-dim); }
 }
 
 .os-layout-detect {
-  background: none;
-  border: none;
   color: var(--text-xdim);
   font-size: 0.9rem;
   padding: 2px 4px;
-  cursor: pointer;
-  transition: color 0.12s;
 }
 
-.os-layout-detect:hover,
 .os-layout-detect:focus-visible { color: var(--text); }
 
 /* Dead key: the character appears only after the next key press */
