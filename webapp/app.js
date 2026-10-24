@@ -356,17 +356,22 @@ function initPresetSelector() {
 // ── Key picker ────────────────────────────────────────────────────────────────
 const LAYER_SHORT = ['Base', 'Num/Nav'];
 
+// Case- and accent-insensitive search text ("e" matches "É")
+function foldSearch(s) {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
 function buildPicker(filter = '') {
   const groups    = OS_LAYOUTS[osLayout].groups;
   const container = document.getElementById('picker-groups');
   container.innerHTML = '';
 
-  const q = filter.trim().toLowerCase();
+  const q = foldSearch(filter.trim());
   let totalVisible = 0;
 
   for (const groupName of GROUP_ORDER) {
     const keys = (groups[groupName] || []).filter(
-      k => !q || k.label.toLowerCase().includes(q)
+      k => !q || foldSearch(k.label).includes(q)
     );
     if (keys.length === 0) continue;
     totalVisible += keys.length;

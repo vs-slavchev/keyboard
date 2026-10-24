@@ -216,6 +216,7 @@ function buildLayout(def, iso = false) {
     platform: def.platform,
     regions: def.regions ?? [],
     hidden: iso,
+    usRef: def.platform === 'mac' ? (iso ? 'us-mac-iso' : 'us-mac') : 'us',
     entries,
     byHid,
     modLevels,
@@ -283,12 +284,20 @@ function fallbackLabel(code, modmask, layout) {
   return `${modName(modmask, layout)}+${getLabel(code, 0)}`;
 }
 
-// Letters show as capitals like the original key labels, so a typed capital
-// gets an explicit Shift+ to stay distinguishable.
+// Latin letters, including accented ones (ü é ß ñ); not µ ª º
+function isLetter(char) {
+  return /^\p{Ll}$/u.test(char) && /^\p{Script=Latin}$/u.test(char);
+}
+
+// Letters show as capitals like keycaps and the original key labels, so a
+// typed capital gets an explicit Shift+ to stay distinguishable.
 function charLabel(char) {
   if (char === ' ') return 'Space';
-  if (/^[a-z]$/.test(char)) return char.toUpperCase();
-  if (/^[A-Z]$/.test(char)) return `Shift+${char}`;
+  if (isLetter(char)) {
+    const upper = char.toUpperCase();
+    return upper.length === 1 ? upper : char;   // ß stays ß
+  }
+  if (/^\p{Lu}$/u.test(char) && /^\p{Script=Latin}$/u.test(char)) return `Shift+${char}`;
   return char;
 }
 
@@ -309,12 +318,19 @@ export function keyInfo(code, modmask, layoutId) {
   return { label: fallbackLabel(code, modmask, layout), dead: false };
 }
 
+// Tooltip: the key named by what it types on this layout, plus the US key it
+// sends (on the same platform) when that differs.
 function describeEntry(entry, layout) {
-  const mod = layout.levelMods[entry.level];
-  const pos = entry.phys === 'IntlBackslash'
-    ? 'ISO key left of Z'
-    : `US "${charLabel(OS_LAYOUTS.us.byHid.get(`${entry.hid}:0`).char)}" key`;
-  let text = `${mod ? mod + ' + ' : ''}${pos} on ${layout.name}`;
+  const mod   = layout.levelMods[entry.level];
+  const own   = charLabel(layout.byHid.get(`${entry.hid}:0`)?.char ?? entry.char);
+  const us    = OS_LAYOUTS[layout.usRef];
+  const usKey = charLabel(us.byHid.get(`${entry.hid}:0`).char);
+
+  let text = `${mod ? mod + ' + ' : ''}"${own}" key on ${layout.name}`;
+  if (layout.platform === 'pc' && entry.phys === 'IntlBackslash')
+    text += ' · extra ISO key next to left Shift';
+  else if (usKey !== own)
+    text += ` · ${layout.platform === 'mac' ? 'US Mac' : 'US'} "${usKey}" key`;
   if (entry.dead) text += ' · dead key (combine with the next key)';
   return text;
 }
@@ -349,7 +365,7 @@ function buildKeyGroups(layoutId) {
     key.label = charLabel(e.char);
     key.title = describeEntry(e, layout);
     key.dead  = e.dead;
-    if (/^[a-z]$/.test(e.char))      letters.push(key);
+    if (isLetter(e.char))            letters.push(key);
     else if (/^[0-9]$/.test(e.char)) digits.push(key);
     else                             symbols.push(key);
   }
