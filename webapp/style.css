@@ -505,18 +505,33 @@ select:hover, select:focus { border-color: var(--text-dim); }
 
 .key-cell.long-label { font-size: 0.6rem; }
 
-/* key test: physically pressed key flashes, then fades back to its own style */
-.key-cell.pressed {
-  animation: key-press-fade var(--press-fade, 3s) ease-out forwards;
+/* key test: a physically pressed key flashes, then fades out. The flash is an
+   overlay under the label, so hover / selected styling still shows through. */
+.key-cell { isolation: isolate; }
+
+.key-cell::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--pressed);
+  box-shadow: 0 0 14px var(--pressed-glow);
+  opacity: 0;
 }
 
+.key-cell.pressed::before {
+  animation: key-press-fade var(--press-fade) ease-out forwards;
+  animation-delay: inherit;
+}
+
+.key-cell:hover::before,
+.key-cell.selected::before { visibility: hidden; }
+
 @keyframes key-press-fade {
-  from {
-    background: var(--pressed);
-    border-color: var(--pressed);
-    color: #fff;
-    box-shadow: 0 0 14px var(--pressed-glow);
-  }
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 /* ── Save bar ──────────────────────────────────────────────────────────────── */

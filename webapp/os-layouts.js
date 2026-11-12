@@ -256,12 +256,22 @@ export function eventHid(eventCode) {
   return HID[eventCode] ?? null;
 }
 
-// HID usage the firmware sends for a stored [code, modmask], and whether Shift
-// is held with it.
+// HID usage the firmware sends for a stored [code, modmask], and which
+// modifiers it holds with it (modmask is one modifier keycode 0x80-0x87:
+// Ctrl Shift Alt GUI, left then right).
 export function cellHid(code, modmask) {
   const key = storedToHid(code);
   if (!key) return null;
-  return { hid: key.hid, shifted: key.level === 1 || OS_LAYOUTS.us.modLevels[modmask] === 1 };
+  const mod = modmask >= 0x80 && modmask <= 0x87 ? (modmask - 0x80) % 4 : -1;
+  return {
+    hid: key.hid,
+    mods: {
+      ctrlKey:  mod === 0,
+      shiftKey: mod === 1 || key.level === 1,
+      altKey:   mod === 2,
+      metaKey:  mod === 3,
+    },
+  };
 }
 
 // Resolve a stored [code, modmask] to the physical key and level it types on
