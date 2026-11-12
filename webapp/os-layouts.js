@@ -235,6 +235,35 @@ for (const e of OS_LAYOUTS.us.entries) {
   KEY_TO_ASCII.set(`${e.hid}:${e.level}`, code);
 }
 
+// ── Key test: match a pressed key (KeyboardEvent.code) to a stored key ───────
+const EVENT_HID = {
+  ...HID,
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, CapsLock: 0x39,
+  Insert: 0x49, Home: 0x4A, PageUp: 0x4B, Delete: 0x4C, End: 0x4D, PageDown: 0x4E,
+  ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xE0, ShiftLeft: 0xE1, AltLeft: 0xE2, MetaLeft: 0xE3,
+  ControlRight: 0xE4, ShiftRight: 0xE5, AltRight: 0xE6, MetaRight: 0xE7,
+};
+for (let i = 1; i <= 12; i++) EVENT_HID['F' + i] = 0x39 + i;
+
+// HID usage of a physical key event, or null if unknown
+export function eventHid(eventCode) {
+  return EVENT_HID[eventCode] ?? null;
+}
+
+// HID usage the firmware sends for a stored [code, modmask], and whether Shift
+// is held with it. null for keys the computer never sees (None, Layer, ...).
+export function cellHid(code, modmask) {
+  const shiftMod = modmask === MOD_SHIFT || modmask === MOD_SHIFT_R;
+  if (code < 0x80) {
+    const k = ASCII_TO_KEY.get(code);
+    return k ? { hid: k.hid, shifted: k.level === 1 || shiftMod } : null;
+  }
+  if (code < RAW_BASE) return { hid: 0xE0 + (code - 0x80), shifted: shiftMod };
+  if (code < 0xF0)     return { hid: code - RAW_BASE, shifted: shiftMod };
+  return null;
+}
+
 // Resolve a stored [code, modmask] to the physical key and level it types on
 // a layout, plus any other modifier held with it.
 function decodeKey(code, modmask, layout) {

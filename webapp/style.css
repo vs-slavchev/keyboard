@@ -24,6 +24,8 @@
   --key-bg:         oklch(21% 0.013 50);
   --key-hover:      oklch(27% 0.018 50);
   --key-selected:   var(--accent);
+  --pressed:        oklch(70% 0.22 320);   /* magenta — key test press */
+  --pressed-glow:   oklch(70% 0.22 320 / 0.45);
 
   --radius-sm:  4px;
   --radius:     7px;
@@ -502,6 +504,25 @@ select:hover, select:focus { border-color: var(--text-dim); }
 }
 
 .key-cell.long-label { font-size: 0.6rem; }
+
+/* key test: physically pressed key flashes, then fades over 3s */
+.key-cell.pressed {
+  animation: key-press-fade 3s ease-out forwards;
+}
+
+@keyframes key-press-fade {
+  from {
+    background: var(--pressed);
+    border-color: var(--pressed);
+    color: #fff;
+    box-shadow: 0 0 14px var(--pressed-glow);
+  }
+  to {
+    background: var(--key-bg);
+    border-color: var(--border-subtle);
+    box-shadow: 0 0 0 transparent;
+  }
+}
 
 /* ── Save bar ──────────────────────────────────────────────────────────────── */
 .save-bar {

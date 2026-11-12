@@ -1,6 +1,6 @@
 import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
-import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch } from './os-layouts.js';
+import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch, eventHid, cellHid } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -22,6 +22,8 @@ let dataChar     = null;
 let currentLayer = 0;
 let osLayout     = OS_LAYOUTS.us;   // computer layout used for labels and the picker
 let detected     = null;   // last auto-detection result { id, iso }, null = not detected
+const pressedAt  = new Map();   // "layer,row,col" → performance.now() of last key-test press
+const PRESS_FADE_MS = 3000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -314,6 +316,12 @@ function renderGrid() {
       if (keyLabel.length > 5) cell.classList.add('long-label');
       if (dead) cell.classList.add('dead');
 
+      const elapsed = performance.now() - (pressedAt.get(`${l},${r},${c}`) ?? -Infinity);
+      if (elapsed < PRESS_FADE_MS) {
+        cell.classList.add('pressed');
+        cell.style.animationDelay = `${-elapsed}ms`;
+      }
+
       cell.addEventListener('click', () => openPicker(l, r, c));
       rowEl.appendChild(cell);
     }
@@ -322,6 +330,45 @@ function renderGrid() {
   }
 
   updateSaveBar();
+}
+
+// ── Key test ──────────────────────────────────────────────────────────────────
+// Light up the cell(s) of a physically pressed key; CSS fades them over 3s.
+function onKeyTest(e) {
+  if (e.repeat) return;
+  if (document.getElementById('view-keyboard').hidden) return;
+  if (document.getElementById('picker-overlay').classList.contains('open')) return;
+  if (e.target.closest?.('input, select, textarea')) return;
+
+  const hid = eventHid(e.code);
+  if (hid === null) return;
+
+  const l = currentLayer;
+  let matches = [];
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 12; c++) {
+      const k = cellHid(...savedLayout[l][r][c]);
+      if (k && k.hid === hid) matches.push({ r, c, shifted: k.shifted });
+    }
+  }
+  if (matches.length > 1) {
+    const exact = matches.filter(m => m.shifted === e.shiftKey);
+    if (exact.length) matches = exact;
+  }
+  if (!matches.length) return;
+
+  const now = performance.now();
+  for (const { r, c } of matches) {
+    pressedAt.set(`${l},${r},${c}`, now);
+    const cell = document.querySelector(
+      `#keyboard-grid .key-cell[data-row="${r}"][data-col="${c}"]`);
+    if (!cell) continue;
+    cell.classList.remove('pressed');
+    cell.style.animationDelay = '';
+    void cell.offsetWidth;   // restart the animation
+    cell.classList.add('pressed');
+  }
+  if (!e.ctrlKey && !e.metaKey) e.preventDefault();
 }
 
 // ── Layer tabs ────────────────────────────────────────────────────────────────
@@ -673,6 +720,7 @@ function init() {
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closePicker();
+    onKeyTest(e);
   });
 }
 
