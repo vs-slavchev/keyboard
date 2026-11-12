@@ -505,9 +505,9 @@ select:hover, select:focus { border-color: var(--text-dim); }
 
 .key-cell.long-label { font-size: 0.6rem; }
 
-/* key test: physically pressed key flashes, then fades over 3s */
+/* key test: physically pressed key flashes, then fades back to its own style */
 .key-cell.pressed {
-  animation: key-press-fade 3s ease-out forwards;
+  animation: key-press-fade var(--press-fade, 3s) ease-out forwards;
 }
 
 @keyframes key-press-fade {
@@ -516,11 +516,6 @@ select:hover, select:focus { border-color: var(--text-dim); }
     border-color: var(--pressed);
     color: #fff;
     box-shadow: 0 0 14px var(--pressed-glow);
-  }
-  to {
-    background: var(--key-bg);
-    border-color: var(--border-subtle);
-    box-shadow: 0 0 0 transparent;
   }
 }
 

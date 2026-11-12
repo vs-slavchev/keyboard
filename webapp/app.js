@@ -290,6 +290,7 @@ function renderGrid() {
   grid.innerHTML = '';
 
   const l = currentLayer;
+  const now = performance.now();
   for (let r = 0; r < 4; r++) {
     const rowEl = document.createElement('div');
     rowEl.className = 'key-row';
@@ -316,11 +317,8 @@ function renderGrid() {
       if (keyLabel.length > 5) cell.classList.add('long-label');
       if (dead) cell.classList.add('dead');
 
-      const elapsed = performance.now() - (pressedAt.get(`${l},${r},${c}`) ?? -Infinity);
-      if (elapsed < PRESS_FADE_MS) {
-        cell.classList.add('pressed');
-        cell.style.animationDelay = `${-elapsed}ms`;
-      }
+      const elapsed = now - (pressedAt.get(`${l},${r},${c}`) ?? -Infinity);
+      if (elapsed < PRESS_FADE_MS) applyPress(cell, elapsed);
 
       cell.addEventListener('click', () => openPicker(l, r, c));
       rowEl.appendChild(cell);
@@ -333,6 +331,12 @@ function renderGrid() {
 }
 
 // ── Key test ──────────────────────────────────────────────────────────────────
+// Mark a cell as pressed `elapsed` ms ago, resuming its fade from that point.
+function applyPress(cell, elapsed) {
+  cell.style.animationDelay = `${-elapsed}ms`;
+  cell.classList.add('pressed');
+}
+
 // Light up the cell(s) of a physically pressed key; CSS fades them over 3s.
 function onKeyTest(e) {
   if (e.repeat) return;
@@ -351,10 +355,8 @@ function onKeyTest(e) {
       if (k && k.hid === hid) matches.push({ r, c, shifted: k.shifted });
     }
   }
-  if (matches.length > 1) {
-    const exact = matches.filter(m => m.shifted === e.shiftKey);
-    if (exact.length) matches = exact;
-  }
+  const exact = matches.filter(m => m.shifted === e.shiftKey);
+  if (exact.length) matches = exact;
   if (!matches.length) return;
 
   const now = performance.now();
@@ -364,9 +366,8 @@ function onKeyTest(e) {
       `#keyboard-grid .key-cell[data-row="${r}"][data-col="${c}"]`);
     if (!cell) continue;
     cell.classList.remove('pressed');
-    cell.style.animationDelay = '';
     void cell.offsetWidth;   // restart the animation
-    cell.classList.add('pressed');
+    applyPress(cell, 0);
   }
   if (!e.ctrlKey && !e.metaKey) e.preventDefault();
 }
@@ -659,6 +660,8 @@ function initOsLayoutSelector() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
+  document.documentElement.style.setProperty('--press-fade', `${PRESS_FADE_MS}ms`);
+
   if (!navigator.bluetooth) {
     const btn = document.getElementById('btn-connect');
     btn.disabled = true;
