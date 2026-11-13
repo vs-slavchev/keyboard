@@ -30,7 +30,13 @@ const HID = {
   BracketLeft: 0x2F, BracketRight: 0x30, Backslash: 0x31,
   Semicolon: 0x33, Quote: 0x34, Comma: 0x36, Period: 0x37, Slash: 0x38,
   IntlBackslash: 0x64, Space: 0x2C,
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, CapsLock: 0x39,
+  Insert: 0x49, Home: 0x4A, PageUp: 0x4B, Delete: 0x4C, End: 0x4D, PageDown: 0x4E,
+  ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xE0, ShiftLeft: 0xE1, AltLeft: 0xE2, MetaLeft: 0xE3,
+  ControlRight: 0xE4, ShiftRight: 0xE5, AltRight: 0xE6, MetaRight: 0xE7,
 };
+for (let i = 1; i <= 12; i++) HID['F' + i] = 0x39 + i;
 for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
 for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1D + i;
 HID.Digit0 = 0x27;
@@ -235,20 +241,45 @@ for (const e of OS_LAYOUTS.us.entries) {
   KEY_TO_ASCII.set(`${e.hid}:${e.level}`, code);
 }
 
+// Physical key and US-layout level a stored keycode sends (see encoding above):
+// ASCII via the US table, modifier keycodes 0x80-0x87, raw HID usages.
+// null for keys the computer never sees (None, Layer, Battery, ...).
+function storedToHid(code) {
+  if (code < 0x80)     return ASCII_TO_KEY.get(code) ?? null;
+  if (code < RAW_BASE) return { hid: 0xE0 + (code - 0x80), level: 0 };
+  if (code < 0xF0)     return { hid: code - RAW_BASE, level: 0 };
+  return null;
+}
+
+// ── Key test: match a pressed key (KeyboardEvent.code) to a stored key ───────
+export function eventHid(eventCode) {
+  return HID[eventCode] ?? null;
+}
+
+// HID usage the firmware sends for a stored [code, modmask], and which
+// modifiers it holds with it (modmask is one modifier keycode 0x80-0x87:
+// Ctrl Shift Alt GUI, left then right).
+export function cellHid(code, modmask) {
+  const key = storedToHid(code);
+  if (!key) return null;
+  const mod = modmask >= 0x80 && modmask <= 0x87 ? (modmask - 0x80) % 4 : -1;
+  return {
+    hid: key.hid,
+    mods: {
+      ctrlKey:  mod === 0,
+      shiftKey: mod === 1 || key.level === 1,
+      altKey:   mod === 2,
+      metaKey:  mod === 3,
+    },
+  };
+}
+
 // Resolve a stored [code, modmask] to the physical key and level it types on
 // a layout, plus any other modifier held with it.
 function decodeKey(code, modmask, layout) {
-  let hid, level;
-  if (code < 0x80) {
-    const k = ASCII_TO_KEY.get(code);
-    if (!k) return null;
-    ({ hid, level } = k);
-  } else if (code >= RAW_BASE && code < 0xF0) {
-    hid = code - RAW_BASE;
-    level = 0;
-  } else {
-    return null;
-  }
+  const stored = storedToHid(code);
+  if (!stored) return null;
+  let { hid, level } = stored;
 
   let otherMod = null;
   const modLevel = layout.modLevels[modmask];

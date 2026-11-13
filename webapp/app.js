@@ -1,6 +1,6 @@
 import { GROUP_ORDER } from './keycodes.js';
 import { PRESETS, DEFAULT_PRESET } from './presets.js';
-import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch } from './os-layouts.js';
+import { OS_LAYOUTS, keyInfo, detectLayout, foldSearch, eventHid, cellHid } from './os-layouts.js';
 
 // ── BLE constants ─────────────────────────────────────────────────────────────
 const CONFIG_SERVICE_UUID   = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -22,6 +22,8 @@ let dataChar     = null;
 let currentLayer = 0;
 let osLayout     = OS_LAYOUTS.us;   // computer layout used for labels and the picker
 let detected     = null;   // last auto-detection result { id, iso }, null = not detected
+const pressedAt  = new Map();   // "layer,row,col" → performance.now() of last key-test press
+const PRESS_FADE_MS = 3000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function deepClone(obj) {
@@ -288,6 +290,7 @@ function renderGrid() {
   grid.innerHTML = '';
 
   const l = currentLayer;
+  const now = performance.now();
   for (let r = 0; r < 4; r++) {
     const rowEl = document.createElement('div');
     rowEl.className = 'key-row';
@@ -314,6 +317,9 @@ function renderGrid() {
       if (keyLabel.length > 5) cell.classList.add('long-label');
       if (dead) cell.classList.add('dead');
 
+      const elapsed = now - (pressedAt.get(`${l},${r},${c}`) ?? -Infinity);
+      if (elapsed < PRESS_FADE_MS) applyPress(cell, elapsed);
+
       cell.addEventListener('click', () => openPicker(l, r, c));
       rowEl.appendChild(cell);
     }
@@ -322,6 +328,93 @@ function renderGrid() {
   }
 
   updateSaveBar();
+}
+
+// ── Key test ──────────────────────────────────────────────────────────────────
+// Mark a cell as pressed `elapsed` ms ago, resuming its fade from that point.
+function applyPress(cell, elapsed) {
+  cell.style.animationDelay = `${-elapsed}ms`;
+  cell.classList.add('pressed');
+}
+
+const MOD_KEYS = ['ctrlKey', 'shiftKey', 'altKey', 'metaKey'];
+const HID_LCTRL = 0xE0;
+const HID_RALT  = 0xE6;
+const isModifierHid = hid => hid >= 0xE0 && hid <= 0xE7;
+
+// Modifier keys that are down and haven't been combined with another key yet.
+// They light only on release: the firmware sends Shift/Ctrl in the same report
+// as a shifted symbol or combo, and that modifier keydown isn't a key press of
+// its own.
+const pendingMods = new Set();
+
+function keyTestActive(e) {
+  return !document.getElementById('view-keyboard').hidden
+      && !document.getElementById('picker-overlay').classList.contains('open')
+      && !e.target.closest?.('input, select, textarea');
+}
+
+// Cells on layer l that send `hid`, narrowed to the ones whose modifiers best
+// match the event's (so Ctrl+C and C, or 1 and !, light separately).
+function matchCells(l, hid, e) {
+  let best = [], bestScore = -1;
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 12; c++) {
+      const k = cellHid(...savedLayout[l][r][c]);
+      if (!k || k.hid !== hid) continue;
+      const score = MOD_KEYS.filter(m => k.mods[m] === e[m]).length;
+      if (score > bestScore) { best = []; bestScore = score; }
+      if (score === bestScore) best.push({ r, c });
+    }
+  }
+  return best;
+}
+
+// Light up the cell(s) sending `hid`; CSS fades them over PRESS_FADE_MS.
+// The Layer key sends nothing, so a press that only exists on the other layer
+// is recorded there (shown when switching tabs) instead of on a wrong cell here.
+function lightHid(hid, e) {
+  let l = currentLayer;
+  let matches = matchCells(l, hid, e);
+  if (!matches.length) {
+    l = 1 - currentLayer;
+    matches = matchCells(l, hid, e);
+  }
+  if (!matches.length) return false;
+
+  const now = performance.now();
+  for (const { r, c } of matches) {
+    pressedAt.set(`${l},${r},${c}`, now);
+    if (l !== currentLayer) continue;
+    const cell = document.querySelector(
+      `#keyboard-grid .key-cell[data-row="${r}"][data-col="${c}"]`);
+    if (!cell) continue;
+    cell.classList.remove('pressed');
+    void cell.offsetWidth;   // restart the animation
+    applyPress(cell, 0);
+  }
+  return true;
+}
+
+function onKeyTestDown(e) {
+  if (e.repeat || !keyTestActive(e)) return;
+  const hid = eventHid(e.code);
+  if (hid === null) return;
+
+  if (isModifierHid(hid)) {
+    // Windows sends a fake Left Ctrl ahead of AltGr
+    if (hid === HID_RALT && e.getModifierState('AltGraph')) pendingMods.delete(HID_LCTRL);
+    pendingMods.add(hid);
+    return;
+  }
+  pendingMods.clear();   // held modifiers were part of this key
+  if (lightHid(hid, e) && !e.ctrlKey && !e.metaKey) e.preventDefault();
+}
+
+function onKeyTestUp(e) {
+  const hid = eventHid(e.code);
+  if (!pendingMods.delete(hid) || !keyTestActive(e)) return;
+  lightHid(hid, e);
 }
 
 // ── Layer tabs ────────────────────────────────────────────────────────────────
@@ -345,6 +438,7 @@ function initPresetSelector() {
     sel.appendChild(opt);
   }
   sel.addEventListener('change', () => {
+    sel.blur();   // hand keys back to the key test
     layout       = deepClone(PRESETS[sel.value]);
     selectedCell = null;
     closePicker();
@@ -577,12 +671,14 @@ function initOsLayoutSelector() {
   setOsLayout(resolveOsLayout(sel.value));
 
   sel.addEventListener('change', () => {
+    sel.blur();   // hand keys back to the key test
     savePref(OS_LAYOUT_STORAGE_KEY, sel.value);
     setOsLayout(resolveOsLayout(sel.value));
     autoRedetectOsLayout();
   });
 
   document.getElementById('os-layout-iso').addEventListener('change', e => {
+    e.target.blur();   // hand keys back to the key test
     const v = e.target.value;
     macIsoOverride = v === 'auto' ? null : v === 'iso';
     savePref(MAC_ISO_STORAGE_KEY, v);
@@ -612,6 +708,8 @@ function initOsLayoutSelector() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
+  document.documentElement.style.setProperty('--press-fade', `${PRESS_FADE_MS}ms`);
+
   if (!navigator.bluetooth) {
     const btn = document.getElementById('btn-connect');
     btn.disabled = true;
@@ -672,8 +770,13 @@ function init() {
     buildPicker(e.target.value);
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closePicker();
+    if (e.key === 'Escape' && document.getElementById('picker-overlay').classList.contains('open')) {
+      closePicker();
+      return;
+    }
+    onKeyTestDown(e);
   });
+  document.addEventListener('keyup', onKeyTestUp);
 }
 
 document.addEventListener('DOMContentLoaded', init);
